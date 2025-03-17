@@ -1,0 +1,12 @@
+{
+  "domain": "airzone_control",
+  "name": "Airzone Control",
+  "version": "1.0.0",
+  "documentation": "https://github.com/tecnoyfoto/airzone_control",
+  "issue_tracker": "https://github.com/tecnoyfoto/airzone_control/issues",
+  "requirements": ["aiohttp"],
+  "dependencies": [],
+  "codeowners": ["@tecnoyfoto"],
+  "config_flow": true,
+  "iot_class": "local_polling"
+}

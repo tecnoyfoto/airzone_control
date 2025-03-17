@@ -1,0 +1,8 @@
+{
+    "title": "Airzone Control",
+    "error_cannot_connect": "Cannot connect to Airzone device.",
+    "sensor_temperature": "Temperature",
+    "sensor_humidity": "Humidity",
+    "sensor_co2": "CO₂"
+  }
+  

@@ -1,0 +1,31 @@
+{
+  "title": "Airzone Control",
+  "state": {
+    "off": "Apagado",
+    "on": "Encendido",
+    "Stop": "Parado",
+    "Ventilación": "Ventilación",
+    "Heat": "Calor",
+    "Cool": "Frío",
+    "Auto": "Automático"
+  },
+  "entity": {
+    "sensor.airzone_iaq_co2": "CO₂ IAQ Airzone",
+    "sensor.airzone_iaq_pm25": "PM2.5 IAQ Airzone",
+    "sensor.airzone_iaq_pm10": "PM10 IAQ Airzone",
+    "sensor.airzone_iaq_tvoc": "TVOC IAQ Airzone",
+    "sensor.airzone_iaq_pressure": "Presión IAQ Airzone",
+    "sensor.airzone_iaq_index": "Índice IAQ Airzone",
+    "sensor.airzone_iaq_score": "Puntuación IAQ Airzone",
+    "sensor.airzone_iaq_ventmode": "Modo de Ventilación IAQ Airzone",
+
+    "sensor.airzone_system_mode": "Modo del Sistema Airzone",
+    "sensor.airzone_fan_speed": "Velocidad del Ventilador Airzone",
+    "sensor.airzone_system_sleep": "Modo Dormir Airzone",
+    "sensor.airzone_system_id": "ID del Sistema Airzone",
+    "sensor.airzone_system_firmware": "Firmware del Sistema Airzone",
+    "sensor.airzone_system_errors": "Errores del Sistema Airzone",
+    "sensor.airzone_system_units": "Unidades del Sistema Airzone",
+    "sensor.airzone_low_battery": "Zonas con Batería Baja"
+  }
+}

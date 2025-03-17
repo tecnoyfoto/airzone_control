@@ -1,0 +1,31 @@
+{
+  "title": "Airzone Control",
+  "state": {
+    "off": "Apagat",
+    "on": "Encès",
+    "Stop": "Parat",
+    "Ventilación": "Ventilació",
+    "Heat": "Calor",
+    "Cool": "Fred",
+    "Auto": "Automàtic"
+  },
+  "entity": {
+    "sensor.airzone_iaq_co2": "CO₂ IAQ Airzone",
+    "sensor.airzone_iaq_pm25": "PM2.5 IAQ Airzone",
+    "sensor.airzone_iaq_pm10": "PM10 IAQ Airzone",
+    "sensor.airzone_iaq_tvoc": "TVOC IAQ Airzone",
+    "sensor.airzone_iaq_pressure": "Pressió IAQ Airzone",
+    "sensor.airzone_iaq_index": "Índex IAQ Airzone",
+    "sensor.airzone_iaq_score": "Puntuació IAQ Airzone",
+    "sensor.airzone_iaq_ventmode": "Mode de Ventilació IAQ Airzone",
+
+    "sensor.airzone_system_mode": "Mode del Sistema Airzone",
+    "sensor.airzone_fan_speed": "Velocitat del Ventilador Airzone",
+    "sensor.airzone_system_sleep": "Mode Dormir Airzone",
+    "sensor.airzone_system_id": "ID del Sistema Airzone",
+    "sensor.airzone_system_firmware": "Firmware del Sistema Airzone",
+    "sensor.airzone_system_errors": "Errors del Sistema Airzone",
+    "sensor.airzone_system_units": "Unitats del Sistema Airzone",
+    "sensor.airzone_low_battery": "Zones amb Bateria Baixa"
+  }
+}
