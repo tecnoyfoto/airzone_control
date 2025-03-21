@@ -2,11 +2,15 @@
   "domain": "airzone_control",
   "name": "Airzone Control",
   "version": "1.0.0",
-  "documentation": "https://github.com/tu_usuario/airzone_control",
-  "issue_tracker": "https://github.com/tu_usuario/airzone_control/issues",
-  "requirements": ["aiohttp"],
+  "documentation": "https://github.com/tecnoyfoto/airzone_control",
+  "issue_tracker": "https://github.com/tecnoyfoto/airzone_control/issues",
+  "requirements": [
+    "aiohttp"
+  ],
   "dependencies": [],
-  "codeowners": ["@tu_usuario"],
+  "codeowners": [
+    "@tecnoyfoto"
+  ],
   "config_flow": true,
   "iot_class": "local_polling",
   "homeassistant": "2022.5.0"
