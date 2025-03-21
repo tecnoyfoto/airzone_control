@@ -12,6 +12,13 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+# Opcional: mapeo de thermos_type a modelos
+THERMOS_TYPE_MAPPING = {
+    2: "Lite Wired Thermostat",
+    3: "Lite Wireless Thermostat",
+    # Agrega otros tipos si los conoces
+}
+
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN]["coordinator"]
     await coordinator.async_request_refresh()
@@ -39,13 +46,17 @@ class AirzoneClimate(ClimateEntity):
         self._attr_unique_id = f"airzone_{self.system_id}_{self.zone_id}_climate"
         self._master_task = None
 
+        # Determinar el modelo a partir de thermos_type
+        thermos_type = zone_data.get("thermos_type")
+        self._model = THERMOS_TYPE_MAPPING.get(thermos_type, "Local API Thermostat")
+
     @property
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, f"airzone_{self.system_id}_{self.zone_id}")},
             "name": f"Airzone Zone {self.zone_data.get('name', self.zone_id)}",
             "manufacturer": "Airzone",
-            "model": "Local API Controller",
+            "model": self._model,
         }
 
     @property
@@ -147,18 +158,19 @@ class AirzoneClimate(ClimateEntity):
     def icon(self) -> str:
         """
         Devuelve un icono dinámico para la zona maestra en función del modo.
-        Si esta zona es la maestra (según el campo "master_zoneID" de hvac_system),
-        se muestra un icono según el modo actual; en caso contrario se devuelve un icono por defecto.
+        Si esta zona es la maestra (según el campo "master_zoneID" en hvac_system),
+        se muestra un icono basado en el valor de 'mode'. De lo contrario se utiliza
+        un icono por defecto.
         """
         hvac_system = self.coordinator.data.get("hvac_system", {})
         master_zone = hvac_system.get("master_zoneID", 1)
         if self.zone_id == master_zone:
             mode = self.zone_data.get("mode")
             ICON_MAPPING = {
-                1: "mdi:stop-circle",      # Stop
-                3: "mdi:weather-sunny",    # Heat (aunque en la API 3 activa lo que se etiqueta como "Heat")
-                0: "mdi:fan",              # Ventilación (si se llegara a utilizar)
-                2: "mdi:thermostat-auto"   # Auto u otro modo, si fuese necesario
+                0: "mdi:stop-circle",      # Stop
+                3: "mdi:weather-sunny",    # Heat (valor 3 se utiliza para Heat)
+                1: "mdi:fan",              # Ventilación (si se llegara a utilizar)
+                2: "mdi:thermostat-auto"   # Auto u otro modo
             }
             return ICON_MAPPING.get(mode, "mdi:thermostat")
         else:

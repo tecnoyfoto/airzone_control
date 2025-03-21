@@ -33,7 +33,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN]["coordinator"] = coordinator
     hass.data[DOMAIN]["entry"] = entry
 
-    # Cargar plataformas: clima, sensor, switch y select (para modo manual)
+    # Cargar plataformas: climate, sensor, switch y select (para el modo manual global)
     hass.async_create_task(
         hass.config_entries.async_forward_entry_setup(entry, "climate")
     )

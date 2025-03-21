@@ -1,54 +1,47 @@
-*Integración Airzone Control*
+**Airzone Control Integration**
 
-Esta integración permite controlar y supervisar sistemas de climatización Airzone mediante su API local (por defecto, en el puerto 3000). A diferencia de la integración oficial, esta versión está diseñada para:
+[🇪🇸 Lee este documento en español](README.es.md)
 
-- Soportar sistemas con múltiples zonas.
-- Exponer un conjunto ampliado de sensores (por ejemplo, temperatura, humedad, batería, firmware, IAQ y diagnóstico).
-- Agrupar las entidades por dispositivo en Home Assistant.
-- Ofrecer control manual del modo del termostato maestro mediante un selector.
+This integration allows controlling and monitoring Airzone HVAC systems through their local API (default port 3000). Unlike the official integration, this version is specifically designed to:
+
+- Support systems with multiple zones.
+- Expose an expanded set of sensors (e.g., temperature, humidity, battery, firmware, IAQ, and diagnostics).
+- Group entities by device in Home Assistant.
+- Provide manual control of the master thermostat mode through a selector.
 -----
-**Características**
+**Features**
 
-- **Detección automática de zonas:**
-  La integración detecta las zonas disponibles mediante llamadas a la API local.
-- **Control individual por zona (climate):**
-  Por cada zona se crea una entidad de clima que permite:
-  - Encender o apagar la zona.
-  - Cambiar el modo (según la información devuelta por la API).
-  - Ajustar la consigna de temperatura.
-  - Visualizar la temperatura ambiente actual.
-- **Sensores de zona (sensor):**
-  Se crean sensores para cada zona, incluyendo:
-  - Temperatura (basada en roomTemp).
-  - Humedad (si el firmware la reporta).
-  - Estado de la batería (mostrando “Ok” o “Low”, detectando Error 8 o niveles bajos).
-  - Firmware del termostato (valor de thermos\_firmware).
-  - Datos de demanda (calor, frío y ventilación) si la API los reporta.
-  - Consignas diferenciadas en caso de doble consigna (coolsetpoint y heatsetpoint).
-  - Sensor global IAQ (con valores de CO₂, PM2.5, PM10, TVOC, presión, índice y puntuación, según la información disponible).
-- **Control del sistema global:**
-  Además de las entidades individuales por zona, la integración agrupa en un dispositivo “Airzone System”:
-  - Un sensor que muestra el modo global.
-  - Un sensor que indica la velocidad del ventilador.
-  - Un sensor que muestra el estado de “modo dormir”.
-  - Sensores opcionales para el ID del sistema, firmware, errores y unidades (Celsius/Fahrenheit).
-  - Un sensor agregado que muestra, de forma resumida, las zonas con batería baja (mostrando el nombre de la zona, por ejemplo, “Cuina, Estudi”, o “Ninguna” si todo está bien).
-- **Control manual del modo maestro:**
-  Se incluye un selector (select) para forzar manualmente el modo del termostato maestro (por ejemplo, “Stop” o “Heat”). Al iniciarse, el selector lee el modo actual desde la API y se sincroniza con él, permitiendo al usuario anular el comportamiento automático cuando sea necesario.
+- **Automatic Zone Detection:** The integration automatically detects available zones via the local API.
+- **Individual Zone Control (climate):** Each zone creates a climate entity allowing:
+  - Turning the zone on or off.
+  - Changing mode (based on the API response).
+  - Adjusting temperature setpoints.
+  - Viewing current room temperature.
+- **Zone Sensors (sensor):** Sensors created for each zone include:
+  - Temperature (based on roomTemp).
+  - Humidity (if reported by firmware).
+  - Battery status ("Ok" or "Low", detecting Error 8 or low levels).
+  - Thermostat firmware version (value from thermos\_firmware).
+  - Demand data (heat, cold, and ventilation) if reported by API.
+  - Dual setpoints if applicable (coolsetpoint and heatsetpoint).
+  - Global IAQ sensor (CO₂, PM2.5, PM10, TVOC, pressure, index, and score, based on available information).
+- **Global System Control:** Entities are grouped into an “Airzone System” device including:
+  - A sensor displaying the global mode.
+  - A sensor indicating fan speed.
+  - A sensor showing the "sleep mode" status.
+  - Optional sensors for system ID, firmware, errors, and units (Celsius/Fahrenheit).
+  - An aggregated sensor summarizing zones with low battery (showing zone names, e.g., "Kitchen, Study", or "None" if all are okay).
+- **Manual Master Mode Control:** Includes a selector to manually force the master thermostat mode (e.g., "Stop" or "Heat"). Upon startup, it reads the current mode from the API and synchronizes, allowing users to override automatic behavior when necessary.
 -----
-**Requisitos previos**
+**Prerequisites**
 
-- Dispositivo Airzone con la API local habilitada (normalmente accesible en http://<IP>:3000).
-- Que el Webserver Airzone esté en la misma red local que Home Assistant.
-- Verifica que, al acceder manualmente (por ejemplo, con curl o un navegador) a http://<IP>:3000/api/v1/hvac?systemid=1&zoneid=1, se obtenga la respuesta JSON esperada.
+- Airzone device with local API enabled (typically accessible at http://:3000).
+- Airzone Webserver must be in the same local network as Home Assistant.
+- Verify manually (using curl or browser) that accessing http://:3000/api/v1/hvac?systemid=1&zoneid=1 returns the expected JSON response.
 -----
-**Instalación**
+**Installation**
 
-1. Descarga los archivos de este repositorio (o clónalo) en tu carpeta config/custom\_components/airzone\_control. La estructura debe quedar similar a: 
-
-pgsql
-
-Copiar
+1. Download the repository files (or clone) into your config/custom\_components/airzone\_control folder. The structure should look like:
 
 custom\_components
 
@@ -78,67 +71,57 @@ custom\_components
 
 `        `└── ca.json
 
-1. Reinicia Home Assistant para que se reconozca la nueva integración.
-1. Configura la integración: 
-   1. Ve a **Ajustes → Dispositivos y Servicios → + Añadir integración**.
-   1. Busca “Airzone Control” en la lista.
-   1. Ingresa la IP del Webserver Airzone y el puerto (por defecto, 3000) y pulsa **Enviar**.
-   1. Tras unos segundos, la integración se instalará y comenzará a mostrar las entidades.
+2. Restart Home Assistant to detect the new integration.
+2. Configure the integration:
+   1. Go to **Settings → Devices & Services → + Add Integration**.
+   1. Search for “Airzone Control” in the list.
+   1. Enter the IP of the Airzone Webserver and the port (default is 3000), then press **Submit**.
+   1. After a few seconds, the integration will install and begin displaying entities.
 -----
-**Entidades creadas**
+**Created Entities**
 
-- **Clima:**
-  Se crea una entidad de clima por cada zona detectada, permitiendo controlar individualmente cada termostato.
-- **Sensores:**
-  Se generan sensores para:
-  - Temperatura, humedad, batería y firmware en cada zona.
-  - Datos de demanda (calor, frío, aire) y, si corresponde, los setpoints de doble consigna.
-  - Sensores IAQ global (CO₂, PM2.5, PM10, TVOC, presión, índice, puntuación y modo de ventilación).
-  - Datos del sistema global (modo, velocidad del ventilador, modo dormir, ID, firmware, errores y unidades).
-  - Un sensor agregado que resume las zonas con batería baja.
-- **Switches:**
-  Se incluyen switches para:
-  - Encender o apagar globalmente el sistema.
-  - Activar o desactivar el modo ECO.
-- **Selector:**
-  Una entidad de tipo “select” para forzar manualmente el modo del termostato maestro (opciones: “Stop” y “Heat”), que se sincroniza automáticamente con el estado actual tras reiniciar.
+- **Climate:** A climate entity is created for each detected zone, allowing individual control.
+- **Sensors:** Sensors include:
+  - Temperature, humidity, battery, and firmware per zone.
+  - Demand data (heat, cold, air) and dual setpoints if applicable.
+  - Global IAQ sensors (CO₂, PM2.5, PM10, TVOC, pressure, index, score, and ventilation mode).
+  - Global system data (mode, fan speed, sleep mode, ID, firmware, errors, and units).
+  - Aggregated sensor summarizing zones with low battery.
+- **Switches:** Switches are included for:
+  - Turning the entire system on or off.
+  - Activating or deactivating ECO mode.
+- **Selector:** A "select" entity for manually forcing the master thermostat mode (options: "Stop" and "Heat"), automatically synchronized with the current state after restart.
 -----
-**Dispositivos en Home Assistant**
+**Devices in Home Assistant**
 
-- Cada zona aparece como un dispositivo independiente (por ejemplo, “Airzone Zone Estudi”) con sus respectivas entidades de clima y sensores.
-- El sistema global (Airzone System) agrupa las entidades correspondientes a datos del sistema, incluyendo el sensor de baterías bajas y el selector de modo manual.
-- El sensor global IAQ se muestra como un dispositivo adicional (“Airzone IAQ Sensor”).
+- Each zone appears as a separate device (e.g., “Airzone Zone Study”) with respective climate and sensor entities.
+- The global system (Airzone System) groups system-wide data entities, including battery status and manual mode selector.
+- Global IAQ sensor is displayed as an additional device (“Airzone IAQ Sensor”).
 -----
-**Modo de uso**
+**Usage**
 
-- **Encendido/Apagado:**
-  Utiliza la tarjeta de clima en Home Assistant para encender o apagar cada zona.
-- **Cambio de consigna:**
-  Ajusta la temperatura deseada directamente desde la interfaz del clima.
-- **Control manual del modo:**
-  Usa el selector “Airzone Manual Mode” para forzar manualmente el modo del termostato maestro (por ejemplo, “Stop” para mantenerlo apagado o “Heat” para encender la calefacción).
-- **Supervisión de baterías:**
-  Consulta el sensor “Zones amb Bateria Baixa” para ver rápidamente cuáles zonas requieren atención en cuanto a nivel de batería.
+- **On/Off:** Use the Home Assistant climate card to turn zones on or off.
+- **Adjust Temperature:** Set the desired temperature directly through the climate interface.
+- **Manual Mode Control:** Use "Airzone Manual Mode" selector to manually set the master thermostat mode ("Stop" or "Heat").
+- **Battery Monitoring:** Check the “Zones amb Bateria Baixa” sensor for quick reference of zones needing battery attention.
 -----
-**Preguntas Frecuentes**
+**Frequently Asked Questions**
 
-- **¿Qué ocurre si solo algunas zonas reportan ciertos datos (por ejemplo, humedad)?**
-  Es normal que algunos termostatos inalámbricos no reporten ciertos valores (como humedad) o lo hagan de forma intermitente (por baterías bajas o problemas de comunicación).
-- **¿Qué significa “Error 8” en la API?**
-  Generalmente indica que el termostato Lite no se comunica correctamente con la central, lo que puede ser consecuencia de pilas bajas o problemas de conexión inalámbrica.
+- **What if only certain zones report some data (e.g., humidity)?** This is normal if certain wireless thermostats do not report values or report intermittently due to low batteries or communication issues.
+- **What does “Error 8” in the API mean?** Generally, this indicates the Lite thermostat isn't properly communicating with the central controller, often due to low batteries or wireless connection issues.
 -----
-**Limitaciones**
+**Limitations**
 
-- Se ha probado con versiones de firmware 3.6x y 3.7x en el Webserver Airzone.
-- La lectura de datos IAQ depende de que el hardware y el firmware del sistema lo soporten.
-- Algunas funcionalidades de diagnóstico o actualización de firmware podrían no estar disponibles si el dispositivo o la API no lo implementan.
+- Tested with firmware versions 3.6x and 3.7x on Airzone Webserver.
+- IAQ data availability depends on hardware and firmware support.
+- Certain diagnostic or firmware update functionalities might not be available depending on device or API capabilities.
 -----
-**Contribuciones**
+**Contributions**
 
-Se aceptan contribuciones y sugerencias para mejorar esta integración. Puedes abrir un PR o enviar issues a través de GitHub.
+Contributions and suggestions to improve this integration are welcome. You can submit PRs or issues via GitHub.
 
 -----
-**Licencia**
+**License**
 
-Esta obra está bajo una [Licencia Internacional Creative Commons Atribución-NoComercial-CompartirIgual 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
+This work is licensed under a [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-nc-sa/4.0/).
 

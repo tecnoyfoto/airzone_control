@@ -1,12 +1,23 @@
 """Plataforma de sensores para Airzone Control."""
 
 import logging
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorDeviceClass,
+    SensorStateClass,
+)
 from homeassistant.const import UnitOfTemperature, PERCENTAGE
 
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+# Mapeo de thermos_type a modelos de termostatos
+THERMOS_TYPE_MAPPING = {
+    2: "Lite Wired Thermostat",
+    3: "Lite Wireless Thermostat",
+    # Agrega otros tipos si los conoces
+}
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Configura la plataforma de sensores para Airzone Control."""
@@ -14,28 +25,39 @@ async def async_setup_entry(hass, entry, async_add_entities):
     sensors = []
 
     # -------------------------------------------------------------------------
-    # SENSORES DE ZONA (básicos y opcionales)
+    # SENSORES DE ZONA
     # -------------------------------------------------------------------------
     zones = coordinator.data.get("hvac_zone", {}).get("data", [])
     for zone_data in zones:
-        sensors.append(AirzoneZoneTemperatureSensor(coordinator, zone_data))
-        sensors.append(AirzoneZoneHumiditySensor(coordinator, zone_data))
-        sensors.append(AirzoneZoneBatterySensor(coordinator, zone_data))
-        sensors.append(AirzoneZoneFirmwareSensor(coordinator, zone_data))
-        # Sensores de demanda, solo si están presentes
+        # Filtrar solo si hay roomTemp, humidity... o si no deseas filtrar, déjalo así
+        if zone_data.get("roomTemp") is not None:
+            sensors.append(AirzoneZoneTemperatureSensor(coordinator, zone_data))
+        if zone_data.get("humidity") is not None:
+            sensors.append(AirzoneZoneHumiditySensor(coordinator, zone_data))
+
+        # Si no tienes un valor de batería en porcentaje, podrías condicionar.
+        # Si battery es un número 0..100:
+        if zone_data.get("battery") is not None:
+            sensors.append(AirzoneZoneBatterySensor(coordinator, zone_data))
+
+        if zone_data.get("thermos_firmware") is not None:
+            sensors.append(AirzoneZoneFirmwareSensor(coordinator, zone_data))
+
         if zone_data.get("heat_demand") is not None:
             sensors.append(AirzoneZoneHeatDemandSensor(coordinator, zone_data))
         if zone_data.get("cold_demand") is not None:
             sensors.append(AirzoneZoneColdDemandSensor(coordinator, zone_data))
         if zone_data.get("air_demand") is not None:
             sensors.append(AirzoneZoneAirDemandSensor(coordinator, zone_data))
-        # Sensor de ventana abierta, si existe
         if zone_data.get("open_window") is not None:
             sensors.append(AirzoneZoneOpenWindowSensor(coordinator, zone_data))
-        # Si se usa doble consigna, añadir sensores para cada setpoint
+
+        # Doble consigna
         if zone_data.get("double_sp") == 1:
-            sensors.append(AirzoneZoneCoolSetpointSensor(coordinator, zone_data))
-            sensors.append(AirzoneZoneHeatSetpointSensor(coordinator, zone_data))
+            if zone_data.get("coolsetpoint") is not None:
+                sensors.append(AirzoneZoneCoolSetpointSensor(coordinator, zone_data))
+            if zone_data.get("heatsetpoint") is not None:
+                sensors.append(AirzoneZoneHeatSetpointSensor(coordinator, zone_data))
 
     # -------------------------------------------------------------------------
     # SENSORES IAQ (globales)
@@ -50,7 +72,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     sensors.append(AirzoneIAQVentModeSensor(coordinator))
 
     # -------------------------------------------------------------------------
-    # SENSORES DEL SISTEMA GLOBAL (foráneos ya existentes)
+    # SENSORES DEL SISTEMA GLOBAL (Airzone Flex A4)
     # -------------------------------------------------------------------------
     sensors.append(AirzoneSystemModeSensor(coordinator))
     sensors.append(AirzoneSystemFanSpeedSensor(coordinator))
@@ -64,16 +86,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
         sensors.append(AirzoneSystemErrorsSensor(coordinator))
     if "units" in hvac_system:
         sensors.append(AirzoneSystemUnitsSensor(coordinator))
-
-    # -------------------------------------------------------------------------
-    # SENSOR AGREGADO: BATERÍAS BAJAS (resumen de todas las zonas)
-    # -------------------------------------------------------------------------
-    # Solo se crea este sensor si al menos hay una zona reportando batería
     if any(z.get("battery") is not None for z in zones):
         sensors.append(AirzoneLowBatterySensor(coordinator))
 
     async_add_entities(sensors)
-
 
 # =============================================================================
 #                           SENSORES DE ZONA
@@ -90,6 +106,10 @@ class AirzoneZoneBaseSensor(SensorEntity):
         self.zone_id = zone_data.get("zoneID", 0)
         self._zone_name = zone_data.get("name", f"Zona {self.zone_id}")
         self._attr_unique_id = None
+
+        # Determinar el modelo del termostato
+        thermos_type = zone_data.get("thermos_type")
+        self._model = THERMOS_TYPE_MAPPING.get(thermos_type, "Local API Thermostat")
 
     @property
     def available(self):
@@ -115,7 +135,8 @@ class AirzoneZoneBaseSensor(SensorEntity):
             "identifiers": {(DOMAIN, f"airzone_{self.system_id}_{self.zone_id}")},
             "via_device": (DOMAIN, f"airzone_{self.system_id}_{self.zone_id}"),
             "manufacturer": "Airzone",
-            "model": "Local API Controller",
+            "model": self._model,
+            "name": f"Airzone Zone {self._zone_name}",
         }
 
 class AirzoneZoneTemperatureSensor(AirzoneZoneBaseSensor):
@@ -153,23 +174,42 @@ class AirzoneZoneHumiditySensor(AirzoneZoneBaseSensor):
         return self.zone_data.get("humidity")
 
 class AirzoneZoneBatterySensor(AirzoneZoneBaseSensor):
+    """Muestra la batería como porcentaje. Ajustar si tu sistema no usa 0-100."""
+    _attr_device_class = SensorDeviceClass.BATTERY
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
     def __init__(self, coordinator, zone_data):
         super().__init__(coordinator, zone_data)
         self._attr_unique_id = f"airzone_battery_{self.system_id}_{self.zone_id}"
 
     @property
     def name(self):
-        return f"{self._zone_name} Battery Status"
+        return f"{self._zone_name} Battery"
+
+    @property
+    def native_unit_of_measurement(self):
+        return PERCENTAGE
 
     @property
     def native_value(self):
-        # Retorna el valor de batería, o "Low" si hay error 8
-        battery = self.zone_data.get("battery")
-        errors = self.zone_data.get("errors", [])
-        for err in errors:
-            if "Error 8" in err.values():
-                return "Low"
-        return battery
+        # Si el sistema usa 0..100, devolvemos ese valor.
+        # Si no lo hace, ajusta la lógica.
+        battery_raw = self.zone_data.get("battery", None)
+        if battery_raw is None:
+            return None
+
+        # Si el firmware reporta 'battery' como un entero de 0..100:
+        # De lo contrario, si es "Ok"/"Low", no se mostrará como porcentaje.
+        try:
+            battery_val = int(battery_raw)
+            if battery_val < 0:
+                battery_val = 0
+            if battery_val > 100:
+                battery_val = 100
+            return battery_val
+        except ValueError:
+            # Si no es un entero, podrías devolver None o un valor por defecto
+            return None
 
 class AirzoneZoneFirmwareSensor(AirzoneZoneBaseSensor):
     def __init__(self, coordinator, zone_data):
@@ -184,7 +224,7 @@ class AirzoneZoneFirmwareSensor(AirzoneZoneBaseSensor):
     def native_value(self):
         return self.zone_data.get("thermos_firmware")
 
-# Nuevos sensores de zona opcionales
+# Nuevos sensores opcionales de zona
 
 class AirzoneZoneHeatDemandSensor(AirzoneZoneBaseSensor):
     def __init__(self, coordinator, zone_data):
@@ -268,7 +308,7 @@ class AirzoneZoneHeatSetpointSensor(AirzoneZoneBaseSensor):
         return self.zone_data.get("heatsetpoint")
 
 # =============================================================================
-#                         SENSORES IAQ (globales)
+# SENSORES IAQ (globales)
 # =============================================================================
 
 class AirzoneIAQBaseSensor(SensorEntity):
@@ -437,7 +477,7 @@ class AirzoneIAQVentModeSensor(AirzoneIAQBaseSensor):
         return None
 
 # =============================================================================
-#                     SENSORES DEL SISTEMA GLOBAL
+# SENSORES DEL SISTEMA GLOBAL (Airzone Flex A4)
 # =============================================================================
 
 class AirzoneSystemModeSensor(SensorEntity):
@@ -456,14 +496,14 @@ class AirzoneSystemModeSensor(SensorEntity):
         mode = hvac_system.get("mode")
         if mode is None:
             return None
-        mode_mapping = {0: "Stop", 1: "Ventilación", 2: "Calor", 3: "Cool"}
+        mode_mapping = {0: "Stop", 3: "Heat", 1: "Ventilación", 2: "Auto"}
         return mode_mapping.get(mode, mode)
 
     @property
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
+            "name": "Airzone Flex A4",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
@@ -487,7 +527,7 @@ class AirzoneSystemFanSpeedSensor(SensorEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
+            "name": "Airzone Flex A4",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
@@ -514,14 +554,10 @@ class AirzoneSystemSleepSensor(SensorEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
+            "name": "Airzone Flex A4",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
-
-# =============================================================================
-#           NUEVOS SENSORES OPCIONALES DEL SISTEMA GLOBAL
-# =============================================================================
 
 class AirzoneSystemIDSensor(SensorEntity):
     """Muestra el systemID del sistema global."""
@@ -541,7 +577,7 @@ class AirzoneSystemIDSensor(SensorEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
+            "name": "Airzone Flex A4",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
@@ -564,7 +600,7 @@ class AirzoneSystemFirmwareSensor(SensorEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
+            "name": "Airzone Flex A4",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
@@ -590,7 +626,7 @@ class AirzoneSystemErrorsSensor(SensorEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
+            "name": "Airzone Flex A4",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
@@ -617,18 +653,18 @@ class AirzoneSystemUnitsSensor(SensorEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
+            "name": "Airzone Flex A4",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
 
 # =============================================================================
-#                SENSOR AGREGADO: BATERÍAS BAJAS
+# SENSOR AGREGADO: BATERÍAS BAJAS
 # =============================================================================
 
 class AirzoneLowBatterySensor(SensorEntity):
     """Sensor que agrega las zonas con batería baja."""
-    _attr_name = "Zonas con Batería Baja"
+    _attr_name = "Zones amb Bateria Baixa"
     _attr_unique_id = "airzone_low_battery"
 
     def __init__(self, coordinator):
@@ -648,16 +684,25 @@ class AirzoneLowBatterySensor(SensorEntity):
         for z in zones:
             name = z.get("name", f"Zona {z.get('zoneID')}")
             battery_level = z.get("battery")
-            # Se asume que un nivel de batería menor a 20 se considera bajo
-            if battery_level is not None and battery_level < 20:
-                low_battery_zones.append(name)
-            else:
-                # También se comprueba si en "errors" aparece "Error 8"
-                errors = z.get("errors", [])
-                for err in errors:
-                    if "Error 8" in err.values():
+            # Si tu battery es un número, podrías chequear < 20, etc.
+            # O si es un "Ok"/"Low", etc. Ajusta la lógica a tu caso real.
+            if battery_level is not None:
+                try:
+                    level_int = int(battery_level)
+                    if level_int < 20:
                         low_battery_zones.append(name)
-                        break
+                except ValueError:
+                    # Si no es un número, por ejemplo "Low", "Ok"
+                    if battery_level.lower() == "low":
+                        low_battery_zones.append(name)
+
+            errors = z.get("errors", [])
+            for err in errors:
+                if "Error 8" in err.values():
+                    if name not in low_battery_zones:
+                        low_battery_zones.append(name)
+                    break
+
         self._attr_native_value = ", ".join(low_battery_zones) if low_battery_zones else "Ninguna"
         self.async_write_ha_state()
 
@@ -665,7 +710,7 @@ class AirzoneLowBatterySensor(SensorEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
+            "name": "Airzone Flex A4",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }

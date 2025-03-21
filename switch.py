@@ -28,16 +28,20 @@ class AirzoneSystemOnOffSwitch(SwitchEntity):
         return hvac_system.get("on", 0) == 1
 
     async def async_turn_on(self, **kwargs):
+        hvac_system = self.coordinator.data.get("hvac_system", {})
+        system_id = hvac_system.get("systemID", 1)
         url = f"{self.coordinator.base_url}/api/v1/hvac"
-        payload = {"systemID": self.coordinator.data.get("hvac_system", {}).get("systemID", 1), "on": 1}
+        payload = {"systemID": system_id, "on": 1}
         async with self.coordinator.session.put(url, json=payload) as response:
             if response.status != 200:
                 _LOGGER.error("Error al encender el sistema: %s", response.status)
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs):
+        hvac_system = self.coordinator.data.get("hvac_system", {})
+        system_id = hvac_system.get("systemID", 1)
         url = f"{self.coordinator.base_url}/api/v1/hvac"
-        payload = {"systemID": self.coordinator.data.get("hvac_system", {}).get("systemID", 1), "on": 0}
+        payload = {"systemID": system_id, "on": 0}
         async with self.coordinator.session.put(url, json=payload) as response:
             if response.status != 200:
                 _LOGGER.error("Error al apagar el sistema: %s", response.status)
@@ -47,7 +51,7 @@ class AirzoneSystemOnOffSwitch(SwitchEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
+            "name": "Airzone Flex A4",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
@@ -67,16 +71,20 @@ class AirzoneSystemEcoSwitch(SwitchEntity):
         return hvac_system.get("eco", 0) == 1
 
     async def async_turn_on(self, **kwargs):
+        hvac_system = self.coordinator.data.get("hvac_system", {})
+        system_id = hvac_system.get("systemID", 1)
         url = f"{self.coordinator.base_url}/api/v1/hvac"
-        payload = {"systemID": self.coordinator.data.get("hvac_system", {}).get("systemID", 1), "eco": 1}
+        payload = {"systemID": system_id, "eco": 1}
         async with self.coordinator.session.put(url, json=payload) as response:
             if response.status != 200:
                 _LOGGER.error("Error al activar ECO mode: %s", response.status)
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs):
+        hvac_system = self.coordinator.data.get("hvac_system", {})
+        system_id = hvac_system.get("systemID", 1)
         url = f"{self.coordinator.base_url}/api/v1/hvac"
-        payload = {"systemID": self.coordinator.data.get("hvac_system", {}).get("systemID", 1), "eco": 0}
+        payload = {"systemID": system_id, "eco": 0}
         async with self.coordinator.session.put(url, json=payload) as response:
             if response.status != 200:
                 _LOGGER.error("Error al desactivar ECO mode: %s", response.status)
@@ -86,7 +94,7 @@ class AirzoneSystemEcoSwitch(SwitchEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
+            "name": "Airzone Flex A4",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }

@@ -6,7 +6,7 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-# Opciones solo "Stop" y "Cool" según lo acordado
+# Opciones: "Stop" y "Heat"
 OPTIONS = ["Stop", "Heat"]
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -24,7 +24,6 @@ class AirzoneManualModeSelect(SelectEntity):
     def __init__(self, coordinator):
         self.coordinator = coordinator
         self._attr_should_poll = False
-        # Al iniciarse, leer el modo actual desde la API
         hvac_system = self.coordinator.data.get("hvac_system", {})
         mode = hvac_system.get("mode")
         if mode == 0:
@@ -32,13 +31,13 @@ class AirzoneManualModeSelect(SelectEntity):
         elif mode == 3:
             self._attr_current_option = "Heat"
         else:
-            self._attr_current_option = "Heat"  # Valor por defecto si no coincide
+            self._attr_current_option = "Heat"  # Valor por defecto
 
     @property
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
+            "name": "Airzone Flex A4",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
@@ -46,8 +45,6 @@ class AirzoneManualModeSelect(SelectEntity):
     async def async_select_option(self, option: str) -> None:
         """Envía el comando para forzar el modo manualmente."""
         self._attr_current_option = option
-
-        # Obtener la zona maestra desde la API usando 'master_zoneID' (por defecto 1)
         hvac_system = self.coordinator.data.get("hvac_system", {})
         master_zone = hvac_system.get("master_zoneID", 1)
         system_id = hvac_system.get("systemID", 1)
