@@ -6,7 +6,7 @@
     ],
     "homeassistant": "2022.5.0",
     "render_readme": true,
-    "zip_release": true,
+    "zip_release": false,
     "changelog": "https://github.com/tecnoyfoto/airzone_control/releases/tag/{version}",
     "issues": "https://github.com/tecnoyfoto/airzone_control/issues",
     "authors": [
