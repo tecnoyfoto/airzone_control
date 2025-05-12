@@ -1,20 +1,30 @@
+"""Plataforma de switches para Airzone Control."""
+import logging
+
 from homeassistant.components.switch import SwitchEntity
 from .const import DOMAIN
-import logging
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Configura la plataforma de switches para Airzone Control."""
     coordinator = hass.data[DOMAIN]["coordinator"]
-    entities = [
-        AirzoneSystemOnOffSwitch(coordinator),
-        AirzoneSystemEcoSwitch(coordinator),
-    ]
+    entities = []
+
+    # Este switch enciende/apaga el sistema global
+    entities.append(AirzoneSystemOnOffSwitch(coordinator))
+
+    # Este switch activa/desactiva modo ECO (si la API lo soporta)
+    entities.append(AirzoneSystemEcoSwitch(coordinator))
+
     async_add_entities(entities)
 
+
 class AirzoneSystemOnOffSwitch(SwitchEntity):
-    """Switch para encender o apagar el sistema globalmente."""
+    """
+    Switch para encender o apagar el sistema globalmente.
+    Si la API no maneja encendido/apagado global, puedes omitirlo.
+    """
     _attr_name = "Airzone System On/Off"
     _attr_unique_id = "airzone_system_on_off"
 
@@ -51,13 +61,17 @@ class AirzoneSystemOnOffSwitch(SwitchEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone Flex A4",
+            "name": "Airzone System",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
 
+
 class AirzoneSystemEcoSwitch(SwitchEntity):
-    """Switch para activar o desactivar el modo ECO."""
+    """
+    Switch para activar o desactivar el modo ECO del sistema.
+    Solo funcional si tu sistema Airzone dispone de “eco” en la API.
+    """
     _attr_name = "Airzone ECO Mode"
     _attr_unique_id = "airzone_system_eco"
 
@@ -92,9 +106,12 @@ class AirzoneSystemEcoSwitch(SwitchEntity):
 
     @property
     def device_info(self):
+        hvac_system = self.coordinator.data.get("hvac_system", {})
+        model_name = hvac_system.get("model", "Airzone System")
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone Flex A4",
+            "name": f"Airzone System {model_name}",
             "manufacturer": "Airzone",
-            "model": "Central Controller",
+            "model": model_name,
         }
+

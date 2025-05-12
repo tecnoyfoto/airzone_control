@@ -10,22 +10,23 @@
     "Auto": "Automático"
   },
   "entity": {
-    "sensor.airzone_iaq_co2": "CO₂ IAQ Airzone",
-    "sensor.airzone_iaq_pm25": "PM2.5 IAQ Airzone",
-    "sensor.airzone_iaq_pm10": "PM10 IAQ Airzone",
-    "sensor.airzone_iaq_tvoc": "TVOC IAQ Airzone",
-    "sensor.airzone_iaq_pressure": "Presión IAQ Airzone",
-    "sensor.airzone_iaq_index": "Índice IAQ Airzone",
-    "sensor.airzone_iaq_score": "Puntuación IAQ Airzone",
-    "sensor.airzone_iaq_ventmode": "Modo de Ventilación IAQ Airzone",
 
-    "sensor.airzone_system_mode": "Modo del Sistema Airzone",
-    "sensor.airzone_fan_speed": "Velocidad del Ventilador Airzone",
-    "sensor.airzone_system_sleep": "Modo Dormir Airzone",
-    "sensor.airzone_system_id": "ID del Sistema Airzone",
-    "sensor.airzone_system_firmware": "Firmware del Sistema Airzone",
-    "sensor.airzone_system_errors": "Errores del Sistema Airzone",
-    "sensor.airzone_system_units": "Unidades del Sistema Airzone",
-    "sensor.airzone_low_battery": "Zonas con Batería Baja"
+    "sensor.airzone_system_id": "ID del Sistema",
+    "sensor.airzone_system_firmware": "Versión de Firmware",
+    "sensor.airzone_system_mode": "Modo del Sistema",
+    "sensor.airzone_fan_speed": "Velocidad del Ventilador",
+    "sensor.airzone_system_sleep": "Modo Reposo",
+    "sensor.airzone_system_errors": "Errores del Sistema",
+    "sensor.airzone_system_units": "Unidades de Temperatura",
+    "sensor.airzone_low_battery": "Zonas con Batería Baja",
+
+    "sensor.airzone_iaq_co2": "CO₂ (Calidad del Aire)",
+    "sensor.airzone_iaq_pm25": "Partículas PM2.5",
+    "sensor.airzone_iaq_pm10": "Partículas PM10",
+    "sensor.airzone_iaq_tvoc": "Compuestos Orgánicos (TVOC)",
+    "sensor.airzone_iaq_pressure": "Presión Atmosférica",
+    "sensor.airzone_iaq_index": "Índice de Calidad de Aire",
+    "sensor.airzone_iaq_score": "Puntuación de Calidad de Aire",
+    "sensor.airzone_iaq_ventmode": "Modo de Ventilación IAQ"
   }
 }

@@ -19,6 +19,7 @@ THERMOS_TYPE_MAPPING = {
     # Agrega otros tipos si los conoces
 }
 
+
 async def async_setup_entry(hass, entry, async_add_entities):
     """Configura la plataforma de sensores para Airzone Control."""
     coordinator = hass.data[DOMAIN]["coordinator"]
@@ -29,26 +30,29 @@ async def async_setup_entry(hass, entry, async_add_entities):
     # -------------------------------------------------------------------------
     zones = coordinator.data.get("hvac_zone", {}).get("data", [])
     for zone_data in zones:
-        # Filtrar solo si hay roomTemp, humidity... o si no deseas filtrar, déjalo así
+        # Solo creamos sensores si el dato existe en la API:
         if zone_data.get("roomTemp") is not None:
             sensors.append(AirzoneZoneTemperatureSensor(coordinator, zone_data))
         if zone_data.get("humidity") is not None:
             sensors.append(AirzoneZoneHumiditySensor(coordinator, zone_data))
 
-        # Si no tienes un valor de batería en porcentaje, podrías condicionar.
-        # Si battery es un número 0..100:
+        # Batería (si la API reporta algo aprovechable)
         if zone_data.get("battery") is not None:
             sensors.append(AirzoneZoneBatterySensor(coordinator, zone_data))
 
+        # Firmware del termostato
         if zone_data.get("thermos_firmware") is not None:
             sensors.append(AirzoneZoneFirmwareSensor(coordinator, zone_data))
 
+        # Demandas de calor, frío y aire
         if zone_data.get("heat_demand") is not None:
             sensors.append(AirzoneZoneHeatDemandSensor(coordinator, zone_data))
         if zone_data.get("cold_demand") is not None:
             sensors.append(AirzoneZoneColdDemandSensor(coordinator, zone_data))
         if zone_data.get("air_demand") is not None:
             sensors.append(AirzoneZoneAirDemandSensor(coordinator, zone_data))
+
+        # Ventana abierta (open_window)
         if zone_data.get("open_window") is not None:
             sensors.append(AirzoneZoneOpenWindowSensor(coordinator, zone_data))
 
@@ -59,44 +63,65 @@ async def async_setup_entry(hass, entry, async_add_entities):
             if zone_data.get("heatsetpoint") is not None:
                 sensors.append(AirzoneZoneHeatSetpointSensor(coordinator, zone_data))
 
+        # NUEVO: sensor de consumo (potencia/energía) - ajusta "consumption_ue" si tu firmware usa otro campo
+        if zone_data.get("consumption_ue") is not None:
+            sensors.append(AirzoneZoneConsumptionSensor(coordinator, zone_data))
+
     # -------------------------------------------------------------------------
     # SENSORES IAQ (globales)
     # -------------------------------------------------------------------------
-    sensors.append(AirzoneIAQCO2Sensor(coordinator))
-    sensors.append(AirzoneIAQPM25Sensor(coordinator))
-    sensors.append(AirzoneIAQPM10Sensor(coordinator))
-    sensors.append(AirzoneIAQTVOCSensor(coordinator))
-    sensors.append(AirzoneIAQPressureSensor(coordinator))
-    sensors.append(AirzoneIAQIndexSensor(coordinator))
-    sensors.append(AirzoneIAQScoreSensor(coordinator))
-    sensors.append(AirzoneIAQVentModeSensor(coordinator))
+    iaq_data = coordinator.data.get("iaq_data", {})
+    if isinstance(iaq_data, dict) and "data" in iaq_data and iaq_data["data"]:
+        sensors.append(AirzoneIAQCO2Sensor(coordinator))
+        sensors.append(AirzoneIAQPM25Sensor(coordinator))
+        sensors.append(AirzoneIAQPM10Sensor(coordinator))
+        sensors.append(AirzoneIAQTVOCSensor(coordinator))
+        sensors.append(AirzoneIAQPressureSensor(coordinator))
+        sensors.append(AirzoneIAQIndexSensor(coordinator))
+        sensors.append(AirzoneIAQScoreSensor(coordinator))
+        sensors.append(AirzoneIAQVentModeSensor(coordinator))
 
     # -------------------------------------------------------------------------
-    # SENSORES DEL SISTEMA GLOBAL (Airzone Flex A4)
+    # SENSORES DEL SISTEMA GLOBAL (Airzone System)
     # -------------------------------------------------------------------------
-    sensors.append(AirzoneSystemModeSensor(coordinator))
-    sensors.append(AirzoneSystemFanSpeedSensor(coordinator))
-    sensors.append(AirzoneSystemSleepSensor(coordinator))
     hvac_system = coordinator.data.get("hvac_system", {})
+    # Sensor del modo global
+    sensors.append(AirzoneSystemModeSensor(coordinator))
+
+    # Sensor de la velocidad del ventilador
+    sensors.append(AirzoneSystemFanSpeedSensor(coordinator))
+
+    # Sensor del modo "dormir"
+    sensors.append(AirzoneSystemSleepSensor(coordinator))
+
+    # ID del sistema
     if hvac_system.get("systemID") is not None:
         sensors.append(AirzoneSystemIDSensor(coordinator))
-    if hvac_system.get("firmware"):
+
+    # Firmware del sistema
+    if hvac_system.get("firmware") is not None:
         sensors.append(AirzoneSystemFirmwareSensor(coordinator))
+
+    # Errores del sistema
     if "errors" in hvac_system:
         sensors.append(AirzoneSystemErrorsSensor(coordinator))
+
+    # Unidades del sistema (Celsius / Fahrenheit)
     if "units" in hvac_system:
         sensors.append(AirzoneSystemUnitsSensor(coordinator))
+
+    # Sensor agregado que muestra las zonas con batería baja
     if any(z.get("battery") is not None for z in zones):
         sensors.append(AirzoneLowBatterySensor(coordinator))
 
     async_add_entities(sensors)
 
 # =============================================================================
-#                           SENSORES DE ZONA
+#                           CLASE BASE ZONA
 # =============================================================================
 
 class AirzoneZoneBaseSensor(SensorEntity):
-    """Clase base para los sensores de una zona."""
+    """Clase base para los sensores de una zona Airzone."""
 
     def __init__(self, coordinator, zone_data):
         self.coordinator = coordinator
@@ -113,15 +138,19 @@ class AirzoneZoneBaseSensor(SensorEntity):
 
     @property
     def available(self):
+        """Devuelve True si la última actualización del coordinador fue exitosa."""
         return self.coordinator.last_update_success
 
     async def async_added_to_hass(self):
+        """Se llama cuando la entidad se añade a Home Assistant."""
         self.coordinator.async_add_listener(self._handle_coordinator_update)
 
     async def async_will_remove_from_hass(self):
+        """Se llama cuando la entidad se elimina de Home Assistant."""
         self.coordinator.async_remove_listener(self._handle_coordinator_update)
 
     def _handle_coordinator_update(self):
+        """Actualiza los datos de la zona cuando el coordinador se refresca."""
         all_zones = self.coordinator.data.get("hvac_zone", {}).get("data", [])
         for zinfo in all_zones:
             if zinfo.get("systemID") == self.system_id and zinfo.get("zoneID") == self.zone_id:
@@ -131,6 +160,7 @@ class AirzoneZoneBaseSensor(SensorEntity):
 
     @property
     def device_info(self):
+        """Devuelve información del dispositivo para agrupar entidades por zona."""
         return {
             "identifiers": {(DOMAIN, f"airzone_{self.system_id}_{self.zone_id}")},
             "via_device": (DOMAIN, f"airzone_{self.system_id}_{self.zone_id}"),
@@ -139,7 +169,13 @@ class AirzoneZoneBaseSensor(SensorEntity):
             "name": f"Airzone Zone {self._zone_name}",
         }
 
+# =============================================================================
+#                           SENSORES DE ZONA
+# =============================================================================
+
 class AirzoneZoneTemperatureSensor(AirzoneZoneBaseSensor):
+    """Sensor de temperatura de la zona."""
+
     def __init__(self, coordinator, zone_data):
         super().__init__(coordinator, zone_data)
         self._attr_unique_id = f"airzone_temp_{self.system_id}_{self.zone_id}"
@@ -156,7 +192,14 @@ class AirzoneZoneTemperatureSensor(AirzoneZoneBaseSensor):
     def native_value(self):
         return self.zone_data.get("roomTemp")
 
+    @property
+    def icon(self):
+        return "mdi:thermometer"
+
+
 class AirzoneZoneHumiditySensor(AirzoneZoneBaseSensor):
+    """Sensor de humedad de la zona."""
+
     def __init__(self, coordinator, zone_data):
         super().__init__(coordinator, zone_data)
         self._attr_unique_id = f"airzone_humidity_{self.system_id}_{self.zone_id}"
@@ -173,8 +216,13 @@ class AirzoneZoneHumiditySensor(AirzoneZoneBaseSensor):
     def native_value(self):
         return self.zone_data.get("humidity")
 
+    @property
+    def icon(self):
+        return "mdi:water-percent"
+
+
 class AirzoneZoneBatterySensor(AirzoneZoneBaseSensor):
-    """Muestra la batería como porcentaje. Ajustar si tu sistema no usa 0-100."""
+    """Muestra la batería de la zona. Ajusta si tu sistema no usa 0-100."""
     _attr_device_class = SensorDeviceClass.BATTERY
     _attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -192,14 +240,10 @@ class AirzoneZoneBatterySensor(AirzoneZoneBaseSensor):
 
     @property
     def native_value(self):
-        # Si el sistema usa 0..100, devolvemos ese valor.
-        # Si no lo hace, ajusta la lógica.
         battery_raw = self.zone_data.get("battery", None)
         if battery_raw is None:
             return None
-
-        # Si el firmware reporta 'battery' como un entero de 0..100:
-        # De lo contrario, si es "Ok"/"Low", no se mostrará como porcentaje.
+        # Si se reporta un entero 0..100:
         try:
             battery_val = int(battery_raw)
             if battery_val < 0:
@@ -208,10 +252,18 @@ class AirzoneZoneBatterySensor(AirzoneZoneBaseSensor):
                 battery_val = 100
             return battery_val
         except ValueError:
-            # Si no es un entero, podrías devolver None o un valor por defecto
+            # Si no es un entero, podría ser "Ok"/"Low", etc.
             return None
 
+    @property
+    def icon(self):
+        # Ícono genérico para batería; se podría personalizar por nivel.
+        return "mdi:battery"
+
+
 class AirzoneZoneFirmwareSensor(AirzoneZoneBaseSensor):
+    """Firmware reportado por el termostato de la zona."""
+
     def __init__(self, coordinator, zone_data):
         super().__init__(coordinator, zone_data)
         self._attr_unique_id = f"airzone_firmware_{self.system_id}_{self.zone_id}"
@@ -224,9 +276,14 @@ class AirzoneZoneFirmwareSensor(AirzoneZoneBaseSensor):
     def native_value(self):
         return self.zone_data.get("thermos_firmware")
 
-# Nuevos sensores opcionales de zona
+    @property
+    def icon(self):
+        return "mdi:chip"
+
 
 class AirzoneZoneHeatDemandSensor(AirzoneZoneBaseSensor):
+    """Sensor que muestra la demanda de calor en la zona."""
+
     def __init__(self, coordinator, zone_data):
         super().__init__(coordinator, zone_data)
         self._attr_unique_id = f"airzone_heat_demand_{self.system_id}_{self.zone_id}"
@@ -239,7 +296,14 @@ class AirzoneZoneHeatDemandSensor(AirzoneZoneBaseSensor):
     def native_value(self):
         return self.zone_data.get("heat_demand")
 
+    @property
+    def icon(self):
+        return "mdi:fire"
+
+
 class AirzoneZoneColdDemandSensor(AirzoneZoneBaseSensor):
+    """Sensor que muestra la demanda de frío en la zona."""
+
     def __init__(self, coordinator, zone_data):
         super().__init__(coordinator, zone_data)
         self._attr_unique_id = f"airzone_cold_demand_{self.system_id}_{self.zone_id}"
@@ -252,7 +316,14 @@ class AirzoneZoneColdDemandSensor(AirzoneZoneBaseSensor):
     def native_value(self):
         return self.zone_data.get("cold_demand")
 
+    @property
+    def icon(self):
+        return "mdi:snowflake"
+
+
 class AirzoneZoneAirDemandSensor(AirzoneZoneBaseSensor):
+    """Sensor que muestra la demanda de aire/ventilación en la zona."""
+
     def __init__(self, coordinator, zone_data):
         super().__init__(coordinator, zone_data)
         self._attr_unique_id = f"airzone_air_demand_{self.system_id}_{self.zone_id}"
@@ -265,7 +336,14 @@ class AirzoneZoneAirDemandSensor(AirzoneZoneBaseSensor):
     def native_value(self):
         return self.zone_data.get("air_demand")
 
+    @property
+    def icon(self):
+        return "mdi:fan"
+
+
 class AirzoneZoneOpenWindowSensor(AirzoneZoneBaseSensor):
+    """Sensor para el estado de ventana abierta en la zona."""
+
     def __init__(self, coordinator, zone_data):
         super().__init__(coordinator, zone_data)
         self._attr_unique_id = f"airzone_open_window_{self.system_id}_{self.zone_id}"
@@ -281,7 +359,18 @@ class AirzoneZoneOpenWindowSensor(AirzoneZoneBaseSensor):
             return None
         return "Open" if value == 1 else "Closed"
 
+    @property
+    def icon(self):
+        # Podríamos devolver un ícono distinto según open/closed
+        if self.native_value == "Open":
+            return "mdi:window-open"
+        else:
+            return "mdi:window-closed"
+
+
 class AirzoneZoneCoolSetpointSensor(AirzoneZoneBaseSensor):
+    """Sensor que muestra la consigna de frío en modo doble consigna."""
+
     def __init__(self, coordinator, zone_data):
         super().__init__(coordinator, zone_data)
         self._attr_unique_id = f"airzone_cool_setpoint_{self.system_id}_{self.zone_id}"
@@ -294,7 +383,14 @@ class AirzoneZoneCoolSetpointSensor(AirzoneZoneBaseSensor):
     def native_value(self):
         return self.zone_data.get("coolsetpoint")
 
+    @property
+    def icon(self):
+        return "mdi:snowflake-thermometer"
+
+
 class AirzoneZoneHeatSetpointSensor(AirzoneZoneBaseSensor):
+    """Sensor que muestra la consigna de calor en modo doble consigna."""
+
     def __init__(self, coordinator, zone_data):
         super().__init__(coordinator, zone_data)
         self._attr_unique_id = f"airzone_heat_setpoint_{self.system_id}_{self.zone_id}"
@@ -307,8 +403,44 @@ class AirzoneZoneHeatSetpointSensor(AirzoneZoneBaseSensor):
     def native_value(self):
         return self.zone_data.get("heatsetpoint")
 
+    @property
+    def icon(self):
+        return "mdi:fire"
+
+
+# ===================== NUEVO: SENSOR DE CONSUMO =====================
+class AirzoneZoneConsumptionSensor(AirzoneZoneBaseSensor):
+    """
+    Muestra el valor de consumo/energía/potencia reportado por la API.
+    Ajusta el nombre 'consumption_ue' si tu firmware usa otro campo,
+    y la unidad si es kWh en vez de W, etc.
+    """
+    _attr_device_class = SensorDeviceClass.POWER  # o SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    # Si la API da W -> UnitOfPower.WATT
+    # Si da kWh -> UnitOfEnergy.KILO_WATT_HOUR
+    from homeassistant.const import UnitOfPower
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+
+    def __init__(self, coordinator, zone_data):
+        super().__init__(coordinator, zone_data)
+        self._attr_unique_id = f"airzone_consumption_{self.system_id}_{self.zone_id}"
+
+    @property
+    def name(self):
+        return f"{self._zone_name} Consumption"
+
+    @property
+    def native_value(self):
+        # Ajusta el campo 'consumption_ue' al que use tu API
+        return self.zone_data.get("consumption_ue")
+
+    @property
+    def icon(self):
+        return "mdi:flash"
+
 # =============================================================================
-# SENSORES IAQ (globales)
+#                          SENSORES IAQ (globales)
 # =============================================================================
 
 class AirzoneIAQBaseSensor(SensorEntity):
@@ -342,10 +474,13 @@ class AirzoneIAQBaseSensor(SensorEntity):
     def _iaq_data(self):
         iaq = self.coordinator.data.get("iaq_data", {})
         if "data" in iaq and isinstance(iaq["data"], list) and iaq["data"]:
-            return iaq["data"][0]
+            return iaq["data"][0]  # Tomamos solo el primer sensor IAQ
         return {}
 
+
 class AirzoneIAQCO2Sensor(AirzoneIAQBaseSensor):
+    """Sensor de CO2 IAQ."""
+
     def __init__(self, coordinator):
         super().__init__(coordinator)
         self._attr_unique_id = "airzone_iaq_co2"
@@ -362,7 +497,14 @@ class AirzoneIAQCO2Sensor(AirzoneIAQBaseSensor):
     def native_value(self):
         return self._iaq_data.get("co2_value")
 
+    @property
+    def icon(self):
+        return "mdi:molecule-co2"
+
+
 class AirzoneIAQPM25Sensor(AirzoneIAQBaseSensor):
+    """Sensor de PM2.5 IAQ."""
+
     def __init__(self, coordinator):
         super().__init__(coordinator)
         self._attr_unique_id = "airzone_iaq_pm25"
@@ -379,7 +521,14 @@ class AirzoneIAQPM25Sensor(AirzoneIAQBaseSensor):
     def native_value(self):
         return self._iaq_data.get("pm2_5_value")
 
+    @property
+    def icon(self):
+        return "mdi:air-filter"
+
+
 class AirzoneIAQPM10Sensor(AirzoneIAQBaseSensor):
+    """Sensor de PM10 IAQ."""
+
     def __init__(self, coordinator):
         super().__init__(coordinator)
         self._attr_unique_id = "airzone_iaq_pm10"
@@ -396,7 +545,14 @@ class AirzoneIAQPM10Sensor(AirzoneIAQBaseSensor):
     def native_value(self):
         return self._iaq_data.get("pm10_value")
 
+    @property
+    def icon(self):
+        return "mdi:air-filter"
+
+
 class AirzoneIAQTVOCSensor(AirzoneIAQBaseSensor):
+    """Sensor de TVOC IAQ."""
+
     def __init__(self, coordinator):
         super().__init__(coordinator)
         self._attr_unique_id = "airzone_iaq_tvoc"
@@ -413,7 +569,14 @@ class AirzoneIAQTVOCSensor(AirzoneIAQBaseSensor):
     def native_value(self):
         return self._iaq_data.get("tvoc_value")
 
+    @property
+    def icon(self):
+        return "mdi:air-filter"
+
+
 class AirzoneIAQPressureSensor(AirzoneIAQBaseSensor):
+    """Sensor de presión IAQ."""
+
     def __init__(self, coordinator):
         super().__init__(coordinator)
         self._attr_unique_id = "airzone_iaq_pressure"
@@ -430,7 +593,14 @@ class AirzoneIAQPressureSensor(AirzoneIAQBaseSensor):
     def native_value(self):
         return self._iaq_data.get("pressure_value")
 
+    @property
+    def icon(self):
+        return "mdi:gauge"
+
+
 class AirzoneIAQIndexSensor(AirzoneIAQBaseSensor):
+    """Sensor de índice IAQ."""
+
     def __init__(self, coordinator):
         super().__init__(coordinator)
         self._attr_unique_id = "airzone_iaq_index"
@@ -443,7 +613,14 @@ class AirzoneIAQIndexSensor(AirzoneIAQBaseSensor):
     def native_value(self):
         return self._iaq_data.get("iaq_index")
 
+    @property
+    def icon(self):
+        return "mdi:gauge"
+
+
 class AirzoneIAQScoreSensor(AirzoneIAQBaseSensor):
+    """Sensor de puntuación IAQ."""
+
     def __init__(self, coordinator):
         super().__init__(coordinator)
         self._attr_unique_id = "airzone_iaq_score"
@@ -456,7 +633,14 @@ class AirzoneIAQScoreSensor(AirzoneIAQBaseSensor):
     def native_value(self):
         return self._iaq_data.get("iaq_score")
 
+    @property
+    def icon(self):
+        return "mdi:gauge"
+
+
 class AirzoneIAQVentModeSensor(AirzoneIAQBaseSensor):
+    """Sensor del modo de ventilación IAQ."""
+
     def __init__(self, coordinator):
         super().__init__(coordinator)
         self._attr_unique_id = "airzone_iaq_ventmode"
@@ -476,12 +660,18 @@ class AirzoneIAQVentModeSensor(AirzoneIAQBaseSensor):
             return "Auto"
         return None
 
+    @property
+    def icon(self):
+        return "mdi:fan"
+
+
 # =============================================================================
-# SENSORES DEL SISTEMA GLOBAL (Airzone Flex A4)
+#                SENSORES DEL SISTEMA GLOBAL (Airzone System)
 # =============================================================================
 
 class AirzoneSystemModeSensor(SensorEntity):
     """Sensor que muestra el modo global del sistema."""
+
     _attr_name = "Airzone System Mode"
     _attr_unique_id = "airzone_system_mode"
     _attr_native_unit_of_measurement = None
@@ -503,10 +693,15 @@ class AirzoneSystemModeSensor(SensorEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone Flex A4",
+            "name": "Airzone System",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
+
+    @property
+    def icon(self):
+        return "mdi:information-outline"
+
 
 class AirzoneSystemFanSpeedSensor(SensorEntity):
     """Sensor que muestra la velocidad del ventilador del sistema."""
@@ -527,10 +722,15 @@ class AirzoneSystemFanSpeedSensor(SensorEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone Flex A4",
+            "name": "Airzone System",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
+
+    @property
+    def icon(self):
+        return "mdi:fan"
+
 
 class AirzoneSystemSleepSensor(SensorEntity):
     """Sensor que indica si el modo dormir está activado."""
@@ -554,10 +754,15 @@ class AirzoneSystemSleepSensor(SensorEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone Flex A4",
+            "name": "Airzone System",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
+
+    @property
+    def icon(self):
+        return "mdi:sleep"
+
 
 class AirzoneSystemIDSensor(SensorEntity):
     """Muestra el systemID del sistema global."""
@@ -577,10 +782,15 @@ class AirzoneSystemIDSensor(SensorEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone Flex A4",
+            "name": "Airzone System",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
+
+    @property
+    def icon(self):
+        return "mdi:numeric"
+
 
 class AirzoneSystemFirmwareSensor(SensorEntity):
     """Muestra la versión de firmware del sistema."""
@@ -600,10 +810,15 @@ class AirzoneSystemFirmwareSensor(SensorEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone Flex A4",
+            "name": "Airzone System",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
+
+    @property
+    def icon(self):
+        return "mdi:chip"
+
 
 class AirzoneSystemErrorsSensor(SensorEntity):
     """Muestra los errores globales del sistema."""
@@ -626,10 +841,15 @@ class AirzoneSystemErrorsSensor(SensorEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone Flex A4",
+            "name": "Airzone System",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
+
+    @property
+    def icon(self):
+        return "mdi:alert-circle"
+
 
 class AirzoneSystemUnitsSensor(SensorEntity):
     """Muestra las unidades globales del sistema (0=Celsius, 1=Fahrenheit)."""
@@ -653,13 +873,18 @@ class AirzoneSystemUnitsSensor(SensorEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone Flex A4",
+            "name": "Airzone System",
             "manufacturer": "Airzone",
             "model": "Central Controller",
         }
 
+    @property
+    def icon(self):
+        return "mdi:thermometer"
+
+
 # =============================================================================
-# SENSOR AGREGADO: BATERÍAS BAJAS
+#          SENSOR AGREGADO: DETECTAR BATERÍAS BAJAS EN TODAS LAS ZONAS
 # =============================================================================
 
 class AirzoneLowBatterySensor(SensorEntity):
@@ -679,23 +904,25 @@ class AirzoneLowBatterySensor(SensorEntity):
         self.coordinator.async_remove_listener(self._handle_coordinator_update)
 
     def _handle_coordinator_update(self):
+        """Revisa qué zonas reportan batería baja."""
         zones = self.coordinator.data.get("hvac_zone", {}).get("data", [])
         low_battery_zones = []
         for z in zones:
             name = z.get("name", f"Zona {z.get('zoneID')}")
             battery_level = z.get("battery")
-            # Si tu battery es un número, podrías chequear < 20, etc.
-            # O si es un "Ok"/"Low", etc. Ajusta la lógica a tu caso real.
+            # Si battery es un número, podrías chequear <20 como ejemplo de "batería baja"
             if battery_level is not None:
                 try:
                     level_int = int(battery_level)
                     if level_int < 20:
                         low_battery_zones.append(name)
                 except ValueError:
-                    # Si no es un número, por ejemplo "Low", "Ok"
-                    if battery_level.lower() == "low":
+                    # Si no es un número y, por ejemplo, es "Low"
+                    if str(battery_level).lower() == "low":
                         low_battery_zones.append(name)
 
+            # Algunas instalaciones devuelven 'Error 8' si la batería está baja
+            # o el termostato Lite no se comunica bien.
             errors = z.get("errors", [])
             for err in errors:
                 if "Error 8" in err.values():
@@ -708,9 +935,15 @@ class AirzoneLowBatterySensor(SensorEntity):
 
     @property
     def device_info(self):
+        hvac_system = self.coordinator.data.get("hvac_system", {})
+        model_name = hvac_system.get("model", "Airzone System")
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone Flex A4",
+            "name": f"Airzone System {model_name}",
             "manufacturer": "Airzone",
-            "model": "Central Controller",
+            "model": model_name,
         }
+
+    @property
+    def icon(self):
+        return "mdi:battery-alert"

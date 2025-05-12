@@ -1,0 +1,16 @@
+{
+    "name": "Airzone Control",
+    "content_in_root": false,
+    "domains": [
+      "airzone_control"
+    ],
+    "homeassistant": "2022.5.0",
+    "render_readme": true,
+    "zip_release": true,
+    "changelog": "https://github.com/tecnoyfoto/airzone_control/releases/tag/{version}",
+    "issues": "https://github.com/tecnoyfoto/airzone_control/issues",
+    "authors": [
+      "Tecnoyfoto"
+    ]
+  }
+  

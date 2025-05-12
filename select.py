@@ -1,70 +1,107 @@
-"""Plataforma Select para forzar manualmente el modo del termostato maestro en Airzone Control."""
-
 import logging
 from homeassistant.components.select import SelectEntity
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-# Opciones: "Stop" y "Heat"
-OPTIONS = ["Stop", "Heat"]
+# Solo Stop y Heat
+MODE_API_MAP = {
+    0: "Stop",
+    3: "Heat",
+}
+MODE_NAME_TO_API = {v: k for k, v in MODE_API_MAP.items()}
+
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    """Configura la plataforma Select para Airzone Control."""
     coordinator = hass.data[DOMAIN]["coordinator"]
     async_add_entities([AirzoneManualModeSelect(coordinator)])
 
+
 class AirzoneManualModeSelect(SelectEntity):
-    """Entidad select para forzar manualmente el modo del termostato maestro."""
     _attr_name = "Airzone Manual Mode"
     _attr_unique_id = "airzone_manual_mode"
-    _attr_options = OPTIONS
-    _attr_icon = "mdi:format-list-bulleted"
+    _attr_should_poll = False
 
     def __init__(self, coordinator):
         self.coordinator = coordinator
-        self._attr_should_poll = False
+        # Solo mostramos Stop y Heat
+        self._attr_options = list(MODE_NAME_TO_API.keys())  # ["Stop", "Heat"]
+        self._attr_current_option = "Stop"  # Valor inicial por defecto
+
+        # Intentamos leer el modo actual del sistema desde la API
         hvac_system = self.coordinator.data.get("hvac_system", {})
-        mode = hvac_system.get("mode")
-        if mode == 0:
-            self._attr_current_option = "Stop"
-        elif mode == 3:
-            self._attr_current_option = "Heat"
-        else:
-            self._attr_current_option = "Heat"  # Valor por defecto
+        data = hvac_system.get("data")
+
+        if isinstance(data, dict):
+            current_mode = data.get("mode")
+            if current_mode in MODE_API_MAP:
+                self._attr_current_option = MODE_API_MAP[current_mode]
+        elif isinstance(data, list) and data:
+            system_obj = data[0]
+            current_mode = system_obj.get("mode")
+            if current_mode in MODE_API_MAP:
+                self._attr_current_option = MODE_API_MAP[current_mode]
 
     @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone Flex A4",
-            "manufacturer": "Airzone",
-            "model": "Central Controller",
-        }
+    def icon(self):
+        """Devuelve un icono distinto según el modo actual."""
+        if self.current_option == "Stop":
+            return "mdi:alert-octagon"
+        elif self.current_option == "Heat":
+            return "mdi:thermometer"
+        return "mdi:thermostat"
+
+    @property
+    def current_option(self):
+        return self._attr_current_option
 
     async def async_select_option(self, option: str) -> None:
-        """Envía el comando para forzar el modo manualmente."""
+        """Cambia el modo maestro enviando un PUT a la API local de Airzone."""
+        if option not in self.options:
+            _LOGGER.warning("Opción '%s' no está en las opciones permitidas.", option)
+            return
+
         self._attr_current_option = option
+
         hvac_system = self.coordinator.data.get("hvac_system", {})
-        master_zone = hvac_system.get("master_zoneID", 1)
-        system_id = hvac_system.get("systemID", 1)
+        system_id = 1
+        master_zone_id = 1
+
+        if isinstance(hvac_system.get("data"), dict):
+            system_id = hvac_system["data"].get("systemID", 1)
+            master_zone_id = hvac_system["data"].get("master_zoneID", 1)
+        elif isinstance(hvac_system.get("data"), list) and hvac_system["data"]:
+            first_sys = hvac_system["data"][0]
+            system_id = first_sys.get("systemID", 1)
+            master_zone_id = first_sys.get("master_zoneID", 1)
+
+        # Convierte "Stop" o "Heat" en el código API (0 o 3)
+        api_mode_code = MODE_NAME_TO_API[option]
 
         url = f"{self.coordinator.base_url}/api/v1/hvac"
-        payload = {"systemID": system_id, "zoneID": master_zone}
-        if option == "Stop":
-            payload["mode"] = 0
-        elif option == "Heat":
-            payload["mode"] = 3
+        payload = {
+            "systemID": system_id,
+            "zoneID": master_zone_id,
+            "mode": api_mode_code
+        }
+        _LOGGER.debug("Cambiando modo maestro a %s (código=%s)", option, api_mode_code)
 
         try:
             async with self.coordinator.session.put(url, json=payload) as response:
                 if response.status != 200:
-                    _LOGGER.error("Error al forzar el modo %s: %s", option, response.status)
+                    _LOGGER.error("Error al forzar modo '%s': HTTP %s", option, response.status)
         except Exception as err:
-            _LOGGER.error("Excepción al forzar el modo %s: %s", option, err)
+            _LOGGER.error("Excepción al enviar modo '%s': %s", option, err)
+
         await self.coordinator.async_request_refresh()
         self.async_write_ha_state()
 
     @property
-    def current_option(self) -> str:
-        return self._attr_current_option
+    def device_info(self):
+        """Asocia este selector al dispositivo 'System'."""
+        return {
+            "identifiers": {(DOMAIN, "system")},
+            "name": "System",
+            "manufacturer": "Airzone",
+            "model": "System",
+        }
