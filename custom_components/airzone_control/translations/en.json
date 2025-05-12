@@ -1,8 +1,31 @@
 {
-    "title": "Airzone Control",
-    "error_cannot_connect": "Cannot connect to Airzone device.",
-    "sensor_temperature": "Temperature",
-    "sensor_humidity": "Humidity",
-    "sensor_co2": "CO₂"
-  }
-  
+  "title": "Airzone Control",
+  "entity": {
+    "sensor.airzone_fan_speed": "Fan Speed",
+    "sensor.airzone_iaq_co2": "CO₂ (Air Quality)",
+    "sensor.airzone_iaq_index": "Air Quality Index",
+    "sensor.airzone_iaq_pm10": "PM10 Particles",
+    "sensor.airzone_iaq_pm25": "PM2.5 Particles",
+    "sensor.airzone_iaq_pressure": "Atmospheric Pressure",
+    "sensor.airzone_iaq_score": "Air Quality Score",
+    "sensor.airzone_iaq_tvoc": "Total VOC",
+    "sensor.airzone_iaq_ventmode": "IAQ Ventilation Mode",
+    "sensor.airzone_low_battery": "Zones with Low Battery",
+    "sensor.airzone_system_errors": "System Errors",
+    "sensor.airzone_system_firmware": "Firmware Version",
+    "sensor.airzone_system_id": "System ID",
+    "sensor.airzone_system_mode": "System Mode",
+    "sensor.airzone_system_sleep": "Sleep Mode",
+    "sensor.airzone_system_units": "Temperature Units"
+  },
+  "state": {
+    "off": "Off",
+    "on": "On",
+    "Auto": "Auto",
+    "Cool": "Cool",
+    "Heat": "Heat",
+    "Stop": "Stop",
+    "Ventilation": "Ventilation"
+  },
+  "error_cannot_connect": "Cannot connect to Airzone device."
+}

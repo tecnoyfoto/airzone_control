@@ -1,147 +1,122 @@
-**Integración Airzone Control**
+# Integración Airzone Control
 
 [🇬🇧 Read this document in English](README.md)
 
+Esta integración personalizada permite controlar y supervisar sistemas Airzone HVAC mediante su API local (puerto 3000). A diferencia de la integración oficial de Home Assistant, **Airzone Control**:
 
-Esta integración permite controlar y supervisar sistemas de climatización Airzone mediante su API local (por defecto, en el puerto 3000). A diferencia de la integración oficial, esta versión está diseñada para:
+- Soporta instalaciones con varias zonas.  
+- Expone más sensores (temperatura, humedad, batería, firmware, IAQ, diagnóstico, consumo).  
+- Agrupa entidades por dispositivo.  
+- Ofrece un selector “Modo Maestro” para anular el termostato central.
 
-- Soportar sistemas con múltiples zonas.
-- Exponer un conjunto ampliado de sensores (por ejemplo, temperatura, humedad, batería, firmware, IAQ y diagnóstico).
-- Agrupar las entidades por dispositivo en Home Assistant.
-- Ofrecer control manual del modo del termostato maestro mediante un selector.
------
-**Características**
+---
 
-- **Detección automática de zonas:**
-  La integración detecta las zonas disponibles mediante llamadas a la API local.
-- **Control individual por zona (climate):**
-  Por cada zona se crea una entidad de clima que permite:
-  - Encender o apagar la zona.
-  - Cambiar el modo (según la información devuelta por la API).
-  - Ajustar la consigna de temperatura.
-  - Visualizar la temperatura ambiente actual.
-- **Sensores de zona (sensor):**
-  Se crean sensores para cada zona, incluyendo:
-  - Temperatura (basada en roomTemp).
-  - Humedad (si el firmware la reporta).
-  - Estado de la batería (mostrando “Ok” o “Low”, detectando Error 8 o niveles bajos).
-  - Firmware del termostato (valor de thermos\_firmware).
-  - Datos de demanda (calor, frío y ventilación) si la API los reporta.
-  - Consignas diferenciadas en caso de doble consigna (coolsetpoint y heatsetpoint).
-  - Sensor global IAQ (con valores de CO₂, PM2.5, PM10, TVOC, presión, índice y puntuación, según la información disponible).
-- **Control del sistema global:**
-  Además de las entidades individuales por zona, la integración agrupa en un dispositivo “Airzone System”:
-  - Un sensor que muestra el modo global.
-  - Un sensor que indica la velocidad del ventilador.
-  - Un sensor que muestra el estado de “modo dormir”.
-  - Sensores opcionales para el ID del sistema, firmware, errores y unidades (Celsius/Fahrenheit).
-  - Un sensor agregado que muestra, de forma resumida, las zonas con batería baja (mostrando el nombre de la zona, por ejemplo, “Cuina, Estudi”, o “Ninguna” si todo está bien).
-- **Control manual del modo maestro:**
-  Se incluye un selector (select) para forzar manualmente el modo del termostato maestro (por ejemplo, “Stop” o “Heat”). Al iniciarse, el selector lee el modo actual desde la API y se sincroniza con él, permitiendo al usuario anular el comportamiento automático cuando sea necesario.
------
-**Requisitos previos**
+## 📦 Instalación
 
-- Dispositivo Airzone con la API local habilitada (normalmente accesible en http://<IP>:3000).
-- Que el Webserver Airzone esté en la misma red local que Home Assistant.
-- Verifica que, al acceder manualmente (por ejemplo, con curl o un navegador) a http://<IP>:3000/api/v1/hvac?systemid=1&zoneid=1, se obtenga la respuesta JSON esperada.
------
-**Instalación**
+### Vía HACS (recomendado)
 
-1. Descarga los archivos de este repositorio (o clónalo) en tu carpeta config/custom\_components/airzone\_control. La estructura debe quedar similar a: 
+1. En Home Assistant, ve a **HACS → Integraciones**.  
+2. Pulsa ⋮ (arriba a la derecha) → **Repositorios personalizados**.  
+3. Añade:
+   - **Repositorio**: `https://github.com/tecnoyfoto/airzone_control`
+   - **Categoría**: **Integración**  
+4. Haz clic en **Add/Añadir**.  
+5. En **HACS → Integraciones**, busca **Airzone Control**, instala y reinicia Home Assistant.
 
-pgsql
+### Manual
 
-Copiar
+> Solo si no usas HACS.  
 
-custom\_components
+1. Clona o descarga en `<config_dir>/custom_components/airzone_control` con esta estructura:
 
-└── airzone\_control
+   ```
+   custom_components/
+   └── airzone_control/
+       ├── __init__.py
+       ├── manifest.json
+       ├── config_flow.py
+       ├── const.py
+       ├── coordinator.py
+       ├── climate.py
+       ├── sensor.py
+       ├── switch.py
+       ├── select.py
+       └── translations/
+           ├── es.json
+           ├── en.json
+           └── ca.json
+   ```
+2. Reinicia Home Assistant.  
+3. Ve a **Ajustes → Dispositivos y Servicios → + Añadir integración**, busca **Airzone Control**, introduce IP y puerto (`3000`), y acepta.
 
-`    `├── \_\_init\_\_.py
+---
 
-`    `├── manifest.json
+## ⚙️ Configuración
 
-`    `├── config\_flow.py
+- Detecta automáticamente zonas 1–8 (ajustable).  
+- Dispositivo “Airzone System” agrupa sensores y switches globales.  
+- Selector “Airzone Manual Mode” para forzar **Parado** ⛔ o **Calor** 🔥.
 
-`    `├── const.py
+---
 
-`    `├── coordinator.py
+## 🗂️ Entidades
 
-`    `├── climate.py
+### Clima
+- Una entidad `climate` por zona: encendido, modo, consigna, ventilador y oscilación.
 
-`    `├── sensor.py
+### Sensores
+- **Zonas**: temperatura, humedad, batería, firmware, demandas, ventana abierta, doble consigna, consumo.  
+- **IAQ**: CO₂, PM2.5, PM10, TVOC, presión, índice, puntuación, modo ventilación.  
+- **Sistema**: modo, velocidad de ventilador, modo dormir, ID, firmware, errores, unidades.  
+- **Agregado**: “Zones amb Bateria Baixa”.
 
-`    `├── switch.py
+### Switches
+- **Airzone System On/Off**  
+- **Airzone ECO Mode** (si lo soporta tu API)
 
-`    `├── select.py
+### Selector
+- **Airzone Manual Mode** (Stop/Heat)
 
-`    `└── translations
+---
 
-`        `├── es.json
+## 📝 Changelog
 
-`        `└── ca.json
+### v1.1.1 – Compliant con HACS
+- Estructura en `custom_components/airzone_control/`  
+- `version` actualizado a **1.1.1**  
 
-1. Reinicia Home Assistant para que se reconozca la nueva integración.
-1. Configura la integración: 
-   1. Ve a **Ajustes → Dispositivos y Servicios → + Añadir integración**.
-   1. Busca “Airzone Control” en la lista.
-   1. Ingresa la IP del Webserver Airzone y el puerto (por defecto, 3000) y pulsa **Enviar**.
-   1. Tras unos segundos, la integración se instalará y comenzará a mostrar las entidades.
------
-**Entidades creadas**
+### v1.1.0 – Soporte HACS
+- Añadido `hacs.json` (`"content_in_root": false`).  
+- Campo `authors` con **Tecnoyfoto**.  
 
-- **Clima:**
-  Se crea una entidad de clima por cada zona detectada, permitiendo controlar individualmente cada termostato.
-- **Sensores:**
-  Se generan sensores para:
-  - Temperatura, humedad, batería y firmware en cada zona.
-  - Datos de demanda (calor, frío, aire) y, si corresponde, los setpoints de doble consigna.
-  - Sensores IAQ global (CO₂, PM2.5, PM10, TVOC, presión, índice, puntuación y modo de ventilación).
-  - Datos del sistema global (modo, velocidad del ventilador, modo dormir, ID, firmware, errores y unidades).
-  - Un sensor agregado que resume las zonas con batería baja.
-- **Switches:**
-  Se incluyen switches para:
-  - Encender o apagar globalmente el sistema.
-  - Activar o desactivar el modo ECO.
-- **Selector:**
-  Una entidad de tipo “select” para forzar manualmente el modo del termostato maestro (opciones: “Stop” y “Heat”), que se sincroniza automáticamente con el estado actual tras reiniciar.
------
-**Dispositivos en Home Assistant**
+Consulta todos los cambios en [Releases][release-link].
 
-- Cada zona aparece como un dispositivo independiente (por ejemplo, “Airzone Zone Estudi”) con sus respectivas entidades de clima y sensores.
-- El sistema global (Airzone System) agrupa las entidades correspondientes a datos del sistema, incluyendo el sensor de baterías bajas y el selector de modo manual.
-- El sensor global IAQ se muestra como un dispositivo adicional (“Airzone IAQ Sensor”).
------
-**Modo de uso**
+---
 
-- **Encendido/Apagado:**
-  Utiliza la tarjeta de clima en Home Assistant para encender o apagar cada zona.
-- **Cambio de consigna:**
-  Ajusta la temperatura deseada directamente desde la interfaz del clima.
-- **Control manual del modo:**
-  Usa el selector “Airzone Manual Mode” para forzar manualmente el modo del termostato maestro (por ejemplo, “Stop” para mantenerlo apagado o “Heat” para encender la calefacción).
-- **Supervisión de baterías:**
-  Consulta el sensor “Zones amb Bateria Baixa” para ver rápidamente cuáles zonas requieren atención en cuanto a nivel de batería.
------
-**Preguntas Frecuentes**
+## 💡 Preguntas frecuentes
 
-- **¿Qué ocurre si solo algunas zonas reportan ciertos datos (por ejemplo, humedad)?**
-  Es normal que algunos termostatos inalámbricos no reporten ciertos valores (como humedad) o lo hagan de forma intermitente (por baterías bajas o problemas de comunicación).
-- **¿Qué significa “Error 8” en la API?**
-  Generalmente indica que el termostato Lite no se comunica correctamente con la central, lo que puede ser consecuencia de pilas bajas o problemas de conexión inalámbrica.
------
-**Limitaciones**
+- **¿Solo algunas zonas muestran humedad?**  
+  Algunos termostatos inalámbricos no reportan humedad o lo hacen intermitentemente.  
+- **¿Qué es “Error 8”?**  
+  Problema de comunicación del termostato Lite, suele indicar batería baja.
 
-- Se ha probado con versiones de firmware 3.6x y 3.7x en el Webserver Airzone.
-- La lectura de datos IAQ depende de que el hardware y el firmware del sistema lo soporten.
-- Algunas funcionalidades de diagnóstico o actualización de firmware podrían no estar disponibles si el dispositivo o la API no lo implementan.
------
-**Contribuciones**
+---
 
-Se aceptan contribuciones y sugerencias para mejorar esta integración. Puedes abrir un PR o enviar issues a través de GitHub.
+## 🤝 Contribuciones
 
------
-**Licencia**
+¡Se aceptan PRs e issues en [GitHub][repo-link]!
 
-Esta obra está bajo una [Licencia Internacional Creative Commons Atribución-NoComercial-CompartirIgual 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
+---
 
+## 📜 Licencia
+
+Licencia [Creative Commons Atribución-NoComercial-CompartirIgual 4.0][license-link].
+
+---
+
+[hacs-badge]: https://img.shields.io/badge/HACS-Custom-orange  
+[hacs-link]: https://github.com/hacs/integration  
+[release-badge]: https://img.shields.io/github/v/release/tecnoyfoto/airzone_control?label=versión  
+[release-link]: https://github.com/tecnoyfoto/airzone_control/releases  
+[repo-link]: https://github.com/tecnoyfoto/airzone_control  
+[license-link]: https://creativecommons.org/licenses/by-nc-sa/4.0/
