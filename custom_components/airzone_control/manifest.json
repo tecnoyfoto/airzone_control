@@ -1,7 +1,7 @@
 {
   "domain": "airzone_control",
   "name": "Airzone Control",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "documentation": "https://github.com/tecnoyfoto/airzone_control",
   "issue_tracker": "https://github.com/tecnoyfoto/airzone_control/issues",
   "requirements": [
