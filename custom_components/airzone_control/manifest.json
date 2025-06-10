@@ -4,16 +4,14 @@
   "version": "1.3.0",
   "documentation": "https://github.com/tecnoyfoto/airzone_control",
   "issue_tracker": "https://github.com/tecnoyfoto/airzone_control/issues",
-  "requirements": [
-    "aiohttp"
-  ],
+  "requirements": [],
   "dependencies": [],
   "codeowners": [
     "@tecnoyfoto"
   ],
   "config_flow": true,
   "iot_class": "local_polling",
-  "homeassistant": "2022.5.0",
+  "homeassistant": "2025.4.0",
   "zeroconf": [
     "_http._tcp.local."
   ]

@@ -54,3 +54,4 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop("coordinator", None)
         hass.data[DOMAIN].pop("entry", None)
     return unload_ok
+#fin
