@@ -28,6 +28,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         10,  # refresco cada 10s en lugar de 60s
         entry
     )
+
     await coordinator.async_config_entry_first_refresh()
 
     hass.data[DOMAIN]["coordinator"] = coordinator
@@ -35,23 +36,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Cargar plataformas: climate, sensor, switch y select (para el modo manual global)
     hass.async_create_task(
-        hass.config_entries.async_forward_entry_setup(entry, "climate")
-    )
-    hass.async_create_task(
-        hass.config_entries.async_forward_entry_setup(entry, "sensor")
-    )
-    hass.async_create_task(
-        hass.config_entries.async_forward_entry_setup(entry, "switch")
-    )
-    hass.async_create_task(
-        hass.config_entries.async_forward_entry_setup(entry, "select")
+        hass.config_entries.async_forward_entry_setups(
+            entry,
+            ["climate", "sensor", "switch", "select"]
+        )
     )
 
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Desactiva la integración."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["climate", "sensor", "switch", "select"])
+    unload_ok = await hass.config_entries.async_unload_platforms(
+        entry,
+        ["climate", "sensor", "switch", "select"]
+    )
     if unload_ok:
         hass.data[DOMAIN].pop("coordinator", None)
         hass.data[DOMAIN].pop("entry", None)
