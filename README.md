@@ -1,122 +1,148 @@
-# Airzone Control Integration
+# Airzone Control (Local API) – Home Assistant
 
-[🇪🇸 Lee este documento en español](README.es.md)
+[🇪🇸 Leer en español](README.es.md)
 
-This custom integration allows controlling and monitoring Airzone HVAC systems via their local API (default port 3000). Unlike the official Home Assistant integration, **Airzone Control**:
+**Unofficial** integration to control and monitor Airzone via the **Local API** (port 3000). It works **fully offline** and is designed for multi-zone setups and/or multiple Airzone devices on the same network.
 
-- Supports multi-zone setups.
-- Exposes extra sensors (temperature, humidity, battery, firmware, IAQ, diagnostics, power consumption).
-- Groups entities by device.
-- Provides a manual “Master Mode” selector to override the central thermostat.
+Compared to the official integration, **Airzone Control**:
+- Supports **multiple devices** (Airzone Webserver / Aidoo Pro / Aidoo Pro Fancoil), each with its own zones and sensors.
+- Exposes richer entities: zone temperature, errors, webserver info (firmware, Wi-Fi signal/channel), **IAQ** (CO₂, PM, TVOC, pressure, score), profiles/diagnostics, etc.
+- Groups entities per **device** and **zone**, making dashboards and automations easier.
+- Provides a **“Master mode”** selector (stop/heat) when supported by the device.
+
+> **Note:** the Local API runs on **Airzone Webserver** or **Aidoo Pro**. Controllers like **Flexa 3** alone **do not** expose the REST API. You need a Webserver/Aidoo in your installation.
 
 ---
 
-## 📦 Installation
+## ✨ What’s new (v1.4.0)
+
+- **Multi-device support:** add **multiple Airzone devices** on the same network (one config entry per device).
+- **mDNS discovery + manual add:** devices show up under *Discovered* when your network allows it; otherwise, add them by IP.
+- **More robust** handling of capabilities and Local API variants.
+
+> 🧨 **Breaking change:** to avoid collisions across systems/zones, some internal `unique_id` values changed. Home Assistant may update certain existing `entity_id` (see **Migration**).
+
+---
+
+## ✅ Requirements
+
+- **Airzone Webserver** or **Aidoo Pro/Fancoil** with **Local API v1** (port **3000**).
+- The device must be reachable from your HA host (same LAN or proper routing/firewall rules).
+
+**Quick API check:**
+- In a browser:  
+  - `http://<IP>:3000/api/v1/webserver` → device info JSON  
+  - `http://<IP>:3000/api/v1/version` → `{"schema":"1.xx"}`  
+- If they don’t respond, that device isn’t exposing the Local API (or there’s a network/firmware issue).
+
+---
+
+## 🧩 Installation
 
 ### Via HACS (recommended)
-
-1. In Home Assistant, go to **HACS → Integrations**.  
-2. Click the ⋮ menu (top right) → **Custom repositories**.  
-3. Add:
-   - **Repository**: `https://github.com/tecnoyfoto/airzone_control`
-   - **Category**: **Integration**  
-4. Click **Add**.  
-5. Back in **HACS → Integrations**, search for **Airzone Control**, click **Install**, and reboot Home Assistant.
+1. **HACS → Integrations →** ⋮ **Custom repositories**  
+2. Add `https://github.com/tecnoyfoto/airzone_control` as **Integration**  
+3. Install **Airzone Control** and **restart** Home Assistant
 
 ### Manual
+1. Copy `custom_components/airzone_control` into your HA config:
 
-> Only if you don’t use HACS.  
+custom_components/
+  └── airzone_control/
+    ├── init.py
+    ├── manifest.json
+    ├── config_flow.py
+    ├── const.py
+    ├── coordinator.py
+    ├── api_modes.py
+    ├── climate.py
+    ├── sensor.py
+    ├── binary_sensor.py
+    ├── select.py
+    ├── switch.py
+    ├── button.py
+    └── translations/
+      ├── en.json
+      ├── es.json
+      └── ca.json
 
-1. Download or clone to `<config_dir>/custom_components/airzone_control` so that your tree looks like:
-
-   ```
-   custom_components/
-   └── airzone_control/
-       ├── __init__.py
-       ├── manifest.json
-       ├── config_flow.py
-       ├── const.py
-       ├── coordinator.py
-       ├── climate.py
-       ├── sensor.py
-       ├── switch.py
-       ├── select.py
-       └── translations/
-           ├── en.json
-           ├── es.json
-           └── ca.json
-   ```
-2. Restart Home Assistant.  
-3. Go to **Settings → Devices & Services → + Add Integration**, search **Airzone Control**, enter your Webserver IP and port (`3000`), then submit.
+2. **Restart** Home Assistant.
 
 ---
 
 ## ⚙️ Configuration
 
-- On startup the integration auto-discovers all zones (1–8 by default).
-- Global “Airzone System” device groups system-wide sensors and switches.
-- A “Master Mode” selector to force **Stop** ⛔ or **Heat** 🔥 on the system.
+### mDNS discovery
+- Go to **Settings → Devices & services → Discovered** and click **Configure** on each Airzone device.
+- If your network doesn’t allow mDNS (VLANs, AP isolation, guest SSIDs…), use manual setup.
+
+### Manual add (IP)
+1. **Settings → Devices & services → + Add integration → Airzone Control**  
+2. Host = **Webserver/Aidoo IP**, Port = **3000**
+
+### Multiple installations
+- Repeat discovery/manual add **once per device**.  
+- The integration creates one config entry per device, with its **zones** and **sensors** underneath.
 
 ---
 
-## 🗂️ Entities
+## 💡 Entities & features
 
-### Climate
-- One `climate` entity per zone for On/Off, mode, setpoint and fan/swing controls.
+### Zone climate
+- On/off, target temperature, hvac modes based on what the API exposes (Heat/Cool/Dry/Fan/Auto/Stop).  
+- Next version: **dynamic fan speeds** (map `speed/speeds/speed_values/speed_type`).
 
 ### Sensors
-- **Zone sensors**: temperature, humidity, battery level, firmware, heat/cold/air demand, open-window, dual setpoints, power consumption.
-- **IAQ sensors**: CO₂, PM2.5, PM10, TVOC, pressure, index, score, ventilation mode.
-- **System sensors**: global mode, fan speed, sleep mode, system ID, firmware, errors, units.
-- **Aggregate**: “Zones amb Bateria Baixa” lists zones with low battery.
-
-### Switches
-- **Airzone System On/Off**
-- **Airzone ECO Mode** (if supported by your API)
-
-### Selector
-- **Airzone Manual Mode** to override the master thermostat (Stop ⛔ or Heat 🔥).
+- **Zone:** Temperature, errors (others when exposed by the API).  
+- **System:** Errors, profile/diagnostics, number of zones, etc.  
+- **Webserver:** Firmware, Wi-Fi quality, RSSI, channel, interface, MAC, type.  
+- **IAQ:** CO₂, PM2.5, PM10, TVOC, pressure, score/index (when Airzone IAQ sensors are present).
 
 ---
 
-## 📝 Changelog
+## 🔁 Migration (Breaking change)
 
-### v1.1.1 – Final HACS compliant
-- Reorganized to `custom_components/airzone_control/`
-- Bumped `version` to **1.1.1**
+To support **multiple devices** safely, some `unique_id` values are now **unique per system/zone**. Since Home Assistant binds `entity_id` to `unique_id`, **some `entity_id` may change** after updating.
 
-### v1.1.0 – HACS support
-- Added `hacs.json` with `"content_in_root": false`.
-- Authors field set to **Tecnoyfoto**.
+**If you see “Entity not found”:**
+1. **Settings → Entities**, filter by **Integration: Airzone Control** to find the new entity.  
+2. If you want to keep the old name, edit the entity and change its **Entity ID**.  
+3. Update automations/dashboards where warnings appear.
 
-For full history, see [Releases][release-link].
+*Tip:* take a **backup** before updating.
 
 ---
 
-## 💡 FAQ
+## 🛠 Troubleshooting
 
-- **Only some zones report humidity?**
-  Some thermostats don’t report humidity or do so intermittently (low battery or comms issues).
-- **What is “Error 8”?**
-  Indicates a Lite thermostat communication problem, often low battery.
+- **Cannot connect:** use the **Webserver/Aidoo IP** (not the controller), confirm `/webserver` and `/version`, check firewall/VLANs.  
+- **Missing modes:** they depend on what the API exposes for that zone. Check the profile in the Airzone app or share the `/hvac` JSON.  
+- **Not discovered:** add by IP (mDNS may be blocked in your network).
+
+---
+
+## 🧭 Compatibility (quick)
+
+- **Yes:** Airzone **Webserver** (Hub/5G/Wi-Fi), **Aidoo Pro**, **Aidoo Pro Fancoil** with Local API v1.  
+- **No:** **Flexa 3** alone (without Webserver/Aidoo) — does not expose the REST API.  
+- **Port:** 3000. Main endpoints: `/api/v1/webserver`, `/api/v1/version`, `/api/v1/hvac`, `/api/v1/iaq`.
+
+---
+
+## 📈 Roadmap (1.5.0)
+
+- **Dynamic fan speeds** (per-zone select + sync with `climate.fan_mode`).  
+- **Firmware update from Home Assistant** (when supported by device/API).  
+- Diagnostics improvements.
 
 ---
 
 ## 🤝 Contributing
 
-PRs and issues are welcome at [GitHub][repo-link].
+Issues and PRs are welcome:  
+**Repo:** https://github.com/tecnoyfoto/airzone_control
 
 ---
 
 ## 📜 License
-
-This project is licensed under [CC BY-NC-SA 4.0][license-link].
-
----
-
-[hacs-badge]: https://img.shields.io/badge/HACS-Custom-orange  
-[hacs-link]: https://github.com/hacs/integration  
-[release-badge]: https://img.shields.io/github/v/release/tecnoyfoto/airzone_control?label=release  
-[release-link]: https://github.com/tecnoyfoto/airzone_control/releases  
-[repo-link]: https://github.com/tecnoyfoto/airzone_control  
-[license-link]: https://creativecommons.org/licenses/by-nc-sa/4.0/
+[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)

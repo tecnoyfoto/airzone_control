@@ -1,117 +1,157 @@
-"""Plataforma de switches para Airzone Control."""
+"""Switches del sistema: On/Off por zona maestra y ECO (solo si existe)."""
+from __future__ import annotations
+
 import logging
+from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    """Configura la plataforma de switches para Airzone Control."""
-    coordinator = hass.data[DOMAIN]["coordinator"]
-    entities = []
 
-    # Este switch enciende/apaga el sistema global
-    entities.append(AirzoneSystemOnOffSwitch(coordinator))
+def _sys_data(coordinator) -> dict:
+    d = coordinator.data or {}
+    sys_list = d.get("hvac_system", {}).get("data")
+    if isinstance(sys_list, list) and sys_list:
+        return sys_list[0]
+    return {}
 
-    # Este switch activa/desactiva modo ECO (si la API lo soporta)
-    entities.append(AirzoneSystemEcoSwitch(coordinator))
 
+def _master_zone(coordinator) -> dict:
+    d = coordinator.data or {}
+    return d.get("master_zone", {}) or {}
+
+
+def _eco_supported(coordinator) -> bool:
+    s = _sys_data(coordinator)
+    mz = _master_zone(coordinator)
+    # Algunos firmwares lo reportan en sistema; otros en la zona
+    return any(k in s for k in ("eco", "eco_adapt")) or any(k in mz for k in ("eco", "eco_adapt"))
+
+
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities
+) -> None:
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    entities: list[SwitchEntity] = [AirzoneSystemOnOffSwitch(coordinator)]
+    if _eco_supported(coordinator):
+        entities.append(AirzoneEcoModeSwitch(coordinator))
     async_add_entities(entities)
 
 
-class AirzoneSystemOnOffSwitch(SwitchEntity):
-    """
-    Switch para encender o apagar el sistema globalmente.
-    Si la API no maneja encendido/apagado global, puedes omitirlo.
-    """
-    _attr_name = "Airzone System On/Off"
-    _attr_unique_id = "airzone_system_on_off"
-
-    def __init__(self, coordinator):
-        self.coordinator = coordinator
-        self._attr_should_poll = False
+class _Base(CoordinatorEntity, SwitchEntity):
+    _attr_should_poll = False
 
     @property
-    def is_on(self):
-        hvac_system = self.coordinator.data.get("hvac_system", {})
-        return hvac_system.get("on", 0) == 1
-
-    async def async_turn_on(self, **kwargs):
-        hvac_system = self.coordinator.data.get("hvac_system", {})
-        system_id = hvac_system.get("systemID", 1)
-        url = f"{self.coordinator.base_url}/api/v1/hvac"
-        payload = {"systemID": system_id, "on": 1}
-        async with self.coordinator.session.put(url, json=payload) as response:
-            if response.status != 200:
-                _LOGGER.error("Error al encender el sistema: %s", response.status)
-        await self.coordinator.async_request_refresh()
-
-    async def async_turn_off(self, **kwargs):
-        hvac_system = self.coordinator.data.get("hvac_system", {})
-        system_id = hvac_system.get("systemID", 1)
-        url = f"{self.coordinator.base_url}/api/v1/hvac"
-        payload = {"systemID": system_id, "on": 0}
-        async with self.coordinator.session.put(url, json=payload) as response:
-            if response.status != 200:
-                _LOGGER.error("Error al apagar el sistema: %s", response.status)
-        await self.coordinator.async_request_refresh()
+    def available(self) -> bool:
+        return self.coordinator.last_update_success
 
     @property
-    def device_info(self):
+    def device_info(self) -> dict[str, Any]:
+        sd = _sys_data(self.coordinator)
+        model = sd.get("model") or "Airzone System"
         return {
             "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
             "manufacturer": "Airzone",
-            "model": "Central Controller",
+            "name": f"Airzone System {model}",
+            "model": model,
         }
 
 
-class AirzoneSystemEcoSwitch(SwitchEntity):
-    """
-    Switch para activar o desactivar el modo ECO del sistema.
-    Solo funcional si tu sistema Airzone dispone de “eco” en la API.
-    """
+class AirzoneSystemOnOffSwitch(_Base):
+    """Encender/Apagar actuando sobre 'on' de la zona maestra (fallback a mode)."""
+    _attr_name = "Airzone System On/Off"
+    _attr_unique_id = "airzone_system_onoff"
+    _attr_icon = "mdi:power"
+
+    @property
+    def is_on(self) -> bool:
+        mz = _master_zone(self.coordinator)
+        try:
+            return bool(int(mz.get("on", 0)))
+        except Exception:
+            return False
+
+    async def async_turn_on(self, **kwargs) -> None:
+        sd = _sys_data(self.coordinator)
+        mz = _master_zone(self.coordinator)
+        payload = {"systemID": int(sd.get("systemID", 1)), "zoneID": int(mz.get("zoneID", 1)), "on": 1}
+        status, data = await self.coordinator._api_put("hvac", payload)
+        if status != 200:
+            _LOGGER.debug("ON 'on:1' falló (%s %s). Fallback con 'mode'.", status, data)
+            # fallback: forzar un modo encendido (Heat si existe)
+            modes = mz.get("modes") if isinstance(mz.get("modes"), list) else []
+            mode = 2 if 2 in modes else (modes[0] if modes else 2)
+            payload = {"systemID": int(sd.get("systemID", 1)), "zoneID": int(mz.get("zoneID", 1)), "mode": mode}
+            status, data = await self.coordinator._api_put("hvac", payload)
+            if status != 200:
+                _LOGGER.error("Fallback ON con mode falló: %s %s", status, data)
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        sd = _sys_data(self.coordinator)
+        mz = _master_zone(self.coordinator)
+        payload = {"systemID": int(sd.get("systemID", 1)), "zoneID": int(mz.get("zoneID", 1)), "on": 0}
+        status, data = await self.coordinator._api_put("hvac", payload)
+        if status != 200:
+            _LOGGER.debug("OFF 'on:0' falló (%s %s). Fallback con 'mode:0'.", status, data)
+            payload = {"systemID": int(sd.get("systemID", 1)), "zoneID": int(mz.get("zoneID", 1)), "mode": 0}
+            status, data = await self.coordinator._api_put("hvac", payload)
+            if status != 200:
+                _LOGGER.error("Fallback OFF con mode=0 falló: %s %s", status, data)
+        await self.coordinator.async_request_refresh()
+
+
+class AirzoneEcoModeSwitch(_Base):
+    """ECO: solo si el firmware lo reporta; usa 'eco' en sistema o 'eco_adapt' en la master."""
     _attr_name = "Airzone ECO Mode"
     _attr_unique_id = "airzone_system_eco"
-
-    def __init__(self, coordinator):
-        self.coordinator = coordinator
-        self._attr_should_poll = False
+    _attr_icon = "mdi:leaf"
 
     @property
-    def is_on(self):
-        hvac_system = self.coordinator.data.get("hvac_system", {})
-        return hvac_system.get("eco", 0) == 1
-
-    async def async_turn_on(self, **kwargs):
-        hvac_system = self.coordinator.data.get("hvac_system", {})
-        system_id = hvac_system.get("systemID", 1)
-        url = f"{self.coordinator.base_url}/api/v1/hvac"
-        payload = {"systemID": system_id, "eco": 1}
-        async with self.coordinator.session.put(url, json=payload) as response:
-            if response.status != 200:
-                _LOGGER.error("Error al activar ECO mode: %s", response.status)
-        await self.coordinator.async_request_refresh()
-
-    async def async_turn_off(self, **kwargs):
-        hvac_system = self.coordinator.data.get("hvac_system", {})
-        system_id = hvac_system.get("systemID", 1)
-        url = f"{self.coordinator.base_url}/api/v1/hvac"
-        payload = {"systemID": system_id, "eco": 0}
-        async with self.coordinator.session.put(url, json=payload) as response:
-            if response.status != 200:
-                _LOGGER.error("Error al desactivar ECO mode: %s", response.status)
-        await self.coordinator.async_request_refresh()
+    def available(self) -> bool:
+        return super().available and _eco_supported(self.coordinator)
 
     @property
-    def device_info(self):
-        hvac_system = self.coordinator.data.get("hvac_system", {})
-        model_name = hvac_system.get("model", "Airzone System")
-        return {
-            "identifiers": {(DOMAIN, "system")},
-            "name": f"Airzone System {model_name}",
-            "manufacturer": "Airzone",
-            "model": model_name,
-        }
+    def is_on(self) -> bool:
+        sd = _sys_data(self.coordinator)
+        mz = _master_zone(self.coordinator)
+        if "eco" in sd:
+            try:
+                return bool(int(sd.get("eco", 0)))
+            except Exception:
+                return False
+        if "eco_adapt" in mz:
+            return str(mz.get("eco_adapt")).lower() != "manual"
+        return False
 
+    async def async_turn_on(self, **kwargs) -> None:
+        sd = _sys_data(self.coordinator)
+        mz = _master_zone(self.coordinator)
+        if "eco" in sd:
+            status, data = await self.coordinator._api_put("hvac", {"systemID": int(sd.get("systemID", 1)), "eco": 1})
+        else:
+            status, data = await self.coordinator._api_put(
+                "hvac", {"systemID": int(sd.get("systemID", 1)), "zoneID": int(mz.get("zoneID", 1)), "eco_adapt": "auto"}
+            )
+        if status != 200:
+            _LOGGER.error("Error activando ECO: %s %s", status, data)
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        sd = _sys_data(self.coordinator)
+        mz = _master_zone(self.coordinator)
+        if "eco" in sd:
+            status, data = await self.coordinator._api_put("hvac", {"systemID": int(sd.get("systemID", 1)), "eco": 0})
+        else:
+            status, data = await self.coordinator._api_put(
+                "hvac", {"systemID": int(sd.get("systemID", 1)), "zoneID": int(mz.get("zoneID", 1)), "eco_adapt": "manual"}
+            )
+        if status != 200:
+            _LOGGER.error("Error desactivando ECO: %s %s", status, data)
+        await self.coordinator.async_request_refresh()

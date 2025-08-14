@@ -1,31 +1,30 @@
 {
-  "title": "Airzone Control",
-  "entity": {
-    "sensor.airzone_fan_speed": "Velocitat del Ventilador",
-    "sensor.airzone_iaq_co2": "CO₂ (Qualitat de l'Aire)",
-    "sensor.airzone_iaq_index": "Índex de Qualitat de l'Aire",
-    "sensor.airzone_iaq_pm10": "Partícules PM10",
-    "sensor.airzone_iaq_pm25": "Partícules PM2.5",
-    "sensor.airzone_iaq_pressure": "Pressió Atmosfèrica",
-    "sensor.airzone_iaq_score": "Puntuació de Qualitat de l'Aire",
-    "sensor.airzone_iaq_tvoc": "Compostos Orgànics (TVOC)",
-    "sensor.airzone_iaq_ventmode": "Mode de Ventilació IAQ",
-    "sensor.airzone_low_battery": "Zones amb Bateria Baixa",
-    "sensor.airzone_system_errors": "Errors del Sistema",
-    "sensor.airzone_system_firmware": "Versió de Firmware",
-    "sensor.airzone_system_id": "ID del Sistema",
-    "sensor.airzone_system_mode": "Mode del Sistema",
-    "sensor.airzone_system_sleep": "Mode Repòs",
-    "sensor.airzone_system_units": "Unitats de Temperatura"
+  "config": {
+    "step": {
+      "user": {
+        "title": "Airzone Control",
+        "description": "Connecta amb l'Airzone Local API (webserver).",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "No es pot connectar. Revisa el host/port i que el webserver d'Airzone sigui accessible."
+    },
+    "abort": {
+      "already_configured": "Aquest host ja està configurat."
+    }
   },
-  "state": {
-    "off": "Apagat",
-    "on": "Ences",
-    "Auto": "Automàtic",
-    "Cool": "Fresc",
-    "Heat": "Calor",
-    "Stop": "Parat",
-    "Ventilació": "Ventilació"
-  },
-  "error_cannot_connect": "No es pot connectar amb el dispositiu Airzone."
+  "options": {
+    "step": {
+      "init": {
+        "title": "Airzone Control - Opcions",
+        "data": {
+          "scan_interval": "Interval de sondeig (segons)"
+        }
+      }
+    }
+  }
 }

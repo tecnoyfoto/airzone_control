@@ -1,949 +1,526 @@
-"""Plataforma de sensores para Airzone Control."""
+from __future__ import annotations
 
 import logging
-from homeassistant.components.sensor import (
-    SensorEntity,
-    SensorDeviceClass,
-    SensorStateClass,
+from typing import Any, List, Tuple
+
+from homeassistant.components.sensor import SensorEntity
+from homeassistant.const import (
+    PERCENTAGE,
+    UnitOfTemperature,
+    UnitOfPressure,
+    CONCENTRATION_PARTS_PER_MILLION,
+    CONCENTRATION_PARTS_PER_BILLION,
+    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
 )
-from homeassistant.const import UnitOfTemperature, PERCENTAGE
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.config_entries import ConfigEntry
 
 from .const import DOMAIN
+from .coordinator import AirzoneCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-# Mapeo de thermos_type a modelos de termostatos
-THERMOS_TYPE_MAPPING = {
-    2: "Lite Wired Thermostat",
-    3: "Lite Wireless Thermostat",
-    # Agrega otros tipos si los conoces
-}
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add_entities):
+    data = hass.data.get(DOMAIN, {})
+    coord: AirzoneCoordinator | None = None
+    if isinstance(data, dict):
+        coord = data.get(entry.entry_id, {}).get("coordinator")
+    if not isinstance(coord, AirzoneCoordinator):
+        return
 
+    entities: list[SensorEntity] = []
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    """Configura la plataforma de sensores para Airzone Control."""
-    coordinator = hass.data[DOMAIN]["coordinator"]
-    sensors = []
+    # Webserver
+    entities.extend(_build_webserver_sensors(coord))
 
-    # -------------------------------------------------------------------------
-    # SENSORES DE ZONA
-    # -------------------------------------------------------------------------
-    zones = coordinator.data.get("hvac_zone", {}).get("data", [])
-    for zone_data in zones:
-        # Solo creamos sensores si el dato existe en la API:
-        if zone_data.get("roomTemp") is not None:
-            sensors.append(AirzoneZoneTemperatureSensor(coordinator, zone_data))
-        if zone_data.get("humidity") is not None:
-            sensors.append(AirzoneZoneHumiditySensor(coordinator, zone_data))
+    # Systems (sensores + errores + PERFIL DETECTADO)
+    for sid in sorted({sid for (sid, _) in (coord.data or {}).keys()}):
+        entities.extend(_build_system_sensors(coord, sid))
+        entities.append(SystemErrorsTextSensor(coord, sid))
+        entities.append(SystemProfileSensor(coord, sid))     # <- NUEVO
 
-        # Batería (si la API reporta algo aprovechable)
-        if zone_data.get("battery") is not None:
-            sensors.append(AirzoneZoneBatterySensor(coordinator, zone_data))
+    # Zones (sensores + PERFIL DE ZONA)
+    for (sid, zid), _ in (coord.data or {}).items():
+        entities.extend(_build_zone_sensors(coord, sid, zid))
+        entities.append(ZoneProfileSensor(coord, sid, zid))  # <- NUEVO
 
-        # Firmware del termostato
-        if zone_data.get("thermos_firmware") is not None:
-            sensors.append(AirzoneZoneFirmwareSensor(coordinator, zone_data))
+    # IAQ real (o fallback)
+    if coord.iaqs:
+        entities.extend(_build_iaq_sensors(coord))
+    elif coord.iaq_fallback:
+        entities.extend(_build_iaq_fallback_sensors(coord))
 
-        # Demandas de calor, frío y aire
-        if zone_data.get("heat_demand") is not None:
-            sensors.append(AirzoneZoneHeatDemandSensor(coordinator, zone_data))
-        if zone_data.get("cold_demand") is not None:
-            sensors.append(AirzoneZoneColdDemandSensor(coordinator, zone_data))
-        if zone_data.get("air_demand") is not None:
-            sensors.append(AirzoneZoneAirDemandSensor(coordinator, zone_data))
+    add_entities(entities)
 
-        # Ventana abierta (open_window)
-        if zone_data.get("open_window") is not None:
-            sensors.append(AirzoneZoneOpenWindowSensor(coordinator, zone_data))
+# ---------------- builders ----------------
 
-        # Doble consigna
-        if zone_data.get("double_sp") == 1:
-            if zone_data.get("coolsetpoint") is not None:
-                sensors.append(AirzoneZoneCoolSetpointSensor(coordinator, zone_data))
-            if zone_data.get("heatsetpoint") is not None:
-                sensors.append(AirzoneZoneHeatSetpointSensor(coordinator, zone_data))
+def _build_webserver_sensors(coord: AirzoneCoordinator) -> list[SensorEntity]:
+    return [
+        WebserverFirmwareSensor(coord),
+        WebserverWifiQualitySensor(coord),
+        WebserverRssiSensor(coord),
+        WebserverWifiChannelSensor(coord),
+        WebserverInterfaceSensor(coord),
+        WebserverCloudSensor(coord),
+        WebserverMacSensor(coord),
+        WebserverTypeSensor(coord),
+    ]
 
-        # NUEVO: sensor de consumo (potencia/energía) - ajusta "consumption_ue" si tu firmware usa otro campo
-        if zone_data.get("consumption_ue") is not None:
-            sensors.append(AirzoneZoneConsumptionSensor(coordinator, zone_data))
+def _build_system_sensors(coord: AirzoneCoordinator, sid: int) -> list[SensorEntity]:
+    fields: list[tuple[str, str, str | None]] = [
+        ("ext_temp",    "Temperatura exterior", UnitOfTemperature.CELSIUS),
+        ("temp_return", "Temperatura retorno",  UnitOfTemperature.CELSIUS),
+        ("work_temp",   "Temperatura trabajo",  UnitOfTemperature.CELSIUS),
+    ]
+    out: list[SensorEntity] = []
+    for key, name, unit in fields:
+        out.append(SystemNumberSensor(coord, sid, key=key, name=name, unit=unit))
+    return out
 
-    # -------------------------------------------------------------------------
-    # SENSORES IAQ (globales)
-    # -------------------------------------------------------------------------
-    iaq_data = coordinator.data.get("iaq_data", {})
-    if isinstance(iaq_data, dict) and "data" in iaq_data and iaq_data["data"]:
-        sensors.append(AirzoneIAQCO2Sensor(coordinator))
-        sensors.append(AirzoneIAQPM25Sensor(coordinator))
-        sensors.append(AirzoneIAQPM10Sensor(coordinator))
-        sensors.append(AirzoneIAQTVOCSensor(coordinator))
-        sensors.append(AirzoneIAQPressureSensor(coordinator))
-        sensors.append(AirzoneIAQIndexSensor(coordinator))
-        sensors.append(AirzoneIAQScoreSensor(coordinator))
-        sensors.append(AirzoneIAQVentModeSensor(coordinator))
+def _build_zone_sensors(coord: AirzoneCoordinator, sid: int, zid: int) -> list[SensorEntity]:
+    return [
+        ZoneTempSensor(coord, sid, zid),
+        ZoneNumberSensor(coord, sid, zid, key="humidity",    name="Humedad", unit=PERCENTAGE),
+        ZoneNumberSensor(coord, sid, zid, key="air_demand",  name="Demanda de aire"),
+        ZoneNumberSensor(coord, sid, zid, key="heat_demand", name="Demanda de calor"),
+        ZoneNumberSensor(coord, sid, zid, key="cold_demand", name="Demanda de frío"),
+        ZoneNumberSensor(coord, sid, zid, key="open_window", name="Ventana abierta"),
+        ZoneErrorsTextSensor(coord, sid, zid),
+    ]
 
-    # -------------------------------------------------------------------------
-    # SENSORES DEL SISTEMA GLOBAL (Airzone System)
-    # -------------------------------------------------------------------------
-    hvac_system = coordinator.data.get("hvac_system", {})
-    # Sensor del modo global
-    sensors.append(AirzoneSystemModeSensor(coordinator))
+def _build_iaq_sensors(coord: AirzoneCoordinator) -> list[SensorEntity]:
+    ents: list[SensorEntity] = []
+    for (sid, iid), _ in (coord.iaqs or {}).items():
+        ents.append(IAQScoreSensor(coord, sid, iid))
+        ents.append(IAQCo2Sensor(coord, sid, iid))
+        ents.append(IAQPM25Sensor(coord, sid, iid))
+        ents.append(IAQPM10Sensor(coord, sid, iid))
+        ents.append(IAQTVOCSensor(coord, sid, iid))
+        ents.append(IAQPressureSensor(coord, sid, iid))
+        ents.append(IAQHumiditySensor(coord, sid, iid))  # aparecerá si el firmware expone rh_*/humidity
+    return ents
 
-    # Sensor de la velocidad del ventilador
-    sensors.append(AirzoneSystemFanSpeedSensor(coordinator))
+def _build_iaq_fallback_sensors(coord: AirzoneCoordinator) -> list[SensorEntity]:
+    ents: list[SensorEntity] = []
+    for sid in sorted((coord.iaq_fallback or {}).keys()):
+        ents.append(IAQQualityFallbackSensor(coord, sid))
+    return ents
 
-    # Sensor del modo "dormir"
-    sensors.append(AirzoneSystemSleepSensor(coordinator))
+# ---------------- base ----------------
 
-    # ID del sistema
-    if hvac_system.get("systemID") is not None:
-        sensors.append(AirzoneSystemIDSensor(coordinator))
+class _BaseAZEntity(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
+    _attr_has_entity_name = True
 
-    # Firmware del sistema
-    if hvac_system.get("firmware") is not None:
-        sensors.append(AirzoneSystemFirmwareSensor(coordinator))
+    def __init__(self, coordinator: AirzoneCoordinator, name: str, unique: str, device: DeviceInfo) -> None:
+        super().__init__(coordinator)
+        self._attr_name = name
+        self._attr_unique_id = unique
+        self._attr_device_info = device
 
-    # Errores del sistema
-    if "errors" in hvac_system:
-        sensors.append(AirzoneSystemErrorsSensor(coordinator))
+# ---------------- webserver ----------------
 
-    # Unidades del sistema (Celsius / Fahrenheit)
-    if "units" in hvac_system:
-        sensors.append(AirzoneSystemUnitsSensor(coordinator))
+def _webserver_device() -> DeviceInfo:
+    return DeviceInfo(
+        identifiers={(DOMAIN, "webserver")},
+        name="Airzone Webserver",
+        manufacturer="Airzone",
+        model="Webserver",
+    )
 
-    # Sensor agregado que muestra las zonas con batería baja
-    if any(z.get("battery") is not None for z in zones):
-        sensors.append(AirzoneLowBatterySensor(coordinator))
+class WebserverFirmwareSensor(_BaseAZEntity):
+    _attr_icon = "mdi:chip"
 
-    async_add_entities(sensors)
-
-# =============================================================================
-#                           CLASE BASE ZONA
-# =============================================================================
-
-class AirzoneZoneBaseSensor(SensorEntity):
-    """Clase base para los sensores de una zona Airzone."""
-
-    def __init__(self, coordinator, zone_data):
-        self.coordinator = coordinator
-        self.zone_data = zone_data
-        self._attr_should_poll = False
-        self.system_id = zone_data.get("systemID", 1)
-        self.zone_id = zone_data.get("zoneID", 0)
-        self._zone_name = zone_data.get("name", f"Zona {self.zone_id}")
-        self._attr_unique_id = None
-
-        # Determinar el modelo del termostato
-        thermos_type = zone_data.get("thermos_type")
-        self._model = THERMOS_TYPE_MAPPING.get(thermos_type, "Local API Thermostat")
+    def __init__(self, coordinator: AirzoneCoordinator) -> None:
+        super().__init__(coordinator, "Firmware Webserver", f"{DOMAIN}_webserver_firmware", _webserver_device())
 
     @property
-    def available(self):
-        """Devuelve True si la última actualización del coordinador fue exitosa."""
-        return self.coordinator.last_update_success
+    def native_value(self) -> str | None:
+        ws = self.coordinator.webserver or {}
+        fw = ws.get("ws_firmware")
+        lm = ws.get("lmachine_firmware")
+        return f"{fw} / LM {lm}" if fw or lm else None
 
-    async def async_added_to_hass(self):
-        """Se llama cuando la entidad se añade a Home Assistant."""
-        self.coordinator.async_add_listener(self._handle_coordinator_update)
+class WebserverWifiQualitySensor(_BaseAZEntity):
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_icon = "mdi:wifi"
 
-    async def async_will_remove_from_hass(self):
-        """Se llama cuando la entidad se elimina de Home Assistant."""
-        self.coordinator.async_remove_listener(self._handle_coordinator_update)
-
-    def _handle_coordinator_update(self):
-        """Actualiza los datos de la zona cuando el coordinador se refresca."""
-        all_zones = self.coordinator.data.get("hvac_zone", {}).get("data", [])
-        for zinfo in all_zones:
-            if zinfo.get("systemID") == self.system_id and zinfo.get("zoneID") == self.zone_id:
-                self.zone_data = zinfo
-                break
-        self.async_write_ha_state()
+    def __init__(self, coordinator: AirzoneCoordinator) -> None:
+        super().__init__(coordinator, "WiFi calidad", f"{DOMAIN}_webserver_wifi_quality", _webserver_device())
 
     @property
-    def device_info(self):
-        """Devuelve información del dispositivo para agrupar entidades por zona."""
+    def native_value(self) -> float | None:
+        ws = self.coordinator.webserver or {}
+        return ws.get("wifi_quality")
+
+class WebserverRssiSensor(_BaseAZEntity):
+    _attr_icon = "mdi:signal"
+
+    def __init__(self, coordinator: AirzoneCoordinator) -> None:
+        super().__init__(coordinator, "WiFi RSSI", f"{DOMAIN}_webserver_wifi_rssi", _webserver_device())
+
+    @property
+    def native_value(self) -> float | None:
+        ws = self.coordinator.webserver or {}
+        return ws.get("wifi_rssi")
+
+class WebserverWifiChannelSensor(_BaseAZEntity):
+    _attr_icon = "mdi:access-point"
+
+    def __init__(self, coordinator: AirzoneCoordinator) -> None:
+        super().__init__(coordinator, "WiFi canal", f"{DOMAIN}_webserver_wifi_channel", _webserver_device())
+
+    @property
+    def native_value(self) -> int | None:
+        ws = self.coordinator.webserver or {}
+        return ws.get("wifi_channel")
+
+class WebserverInterfaceSensor(_BaseAZEntity):
+    _attr_icon = "mdi:lan"
+
+    def __init__(self, coordinator: AirzoneCoordinator) -> None:
+        super().__init__(coordinator, "Interfaz", f"{DOMAIN}_webserver_interface", _webserver_device())
+
+    @property
+    def native_value(self) -> str | None:
+        ws = self.coordinator.webserver or {}
+        return ws.get("interface")
+
+class WebserverCloudSensor(_BaseAZEntity):
+    _attr_icon = "mdi:cloud-check"
+
+    def __init__(self, coordinator: AirzoneCoordinator) -> None:
+        super().__init__(coordinator, "Cloud conectado", f"{DOMAIN}_webserver_cloud", _webserver_device())
+
+    @property
+    def native_value(self) -> str | None:
+        ws = self.coordinator.webserver or {}
+        v = ws.get("cloud_connected")
+        if v is None:
+            return None
+        return "Sí" if str(v).lower() in ("1", "true") else "No"
+
+class WebserverMacSensor(_BaseAZEntity):
+    _attr_icon = "mdi:identifier"
+
+    def __init__(self, coordinator: AirzoneCoordinator) -> None:
+        super().__init__(coordinator, "MAC", f"{DOMAIN}_webserver_mac", _webserver_device())
+
+    @property
+    def native_value(self) -> str | None:
+        ws = self.coordinator.webserver or {}
+        return ws.get("mac")
+
+class WebserverTypeSensor(_BaseAZEntity):
+    _attr_icon = "mdi:chip"
+
+    def __init__(self, coordinator: AirzoneCoordinator) -> None:
+        super().__init__(coordinator, "Tipo Webserver", f"{DOMAIN}_webserver_type", _webserver_device())
+
+    @property
+    def native_value(self) -> str | None:
+        ws = self.coordinator.webserver or {}
+        return ws.get("ws_type")
+
+# ---------------- systems ----------------
+
+class SystemNumberSensor(_BaseAZEntity):
+    _attr_state_class = "measurement"
+
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, *, key: str, name: str, unit: str | None = None) -> None:
+        device = DeviceInfo(
+            identifiers={(DOMAIN, f"system-{system_id}")},
+            name=f"Sistema {system_id}",
+            manufacturer="Airzone",
+            model="HVAC System",
+        )
+        super().__init__(coordinator, name, f"{DOMAIN}_system_{system_id}_{key}", device)
+        self._sid = int(system_id)
+        self._key = key
+        self._attr_native_unit_of_measurement = unit
+
+    @property
+    def native_value(self) -> float | None:
+        sys = self.coordinator.get_system(self._sid) or {}
+        return sys.get(self._key)
+
+class SystemErrorsTextSensor(_BaseAZEntity):
+    """Errores agregados por sistema (todas sus zonas)."""
+    _attr_icon = "mdi:alert-decagram"
+
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
+        device = DeviceInfo(
+            identifiers={(DOMAIN, f"system-{system_id}")},
+            name=f"Sistema {system_id}",
+            manufacturer="Airzone",
+            model="HVAC System",
+        )
+        super().__init__(coordinator, "Errores del sistema", f"{DOMAIN}_system_{system_id}_errors_text", device)
+        self._sid = int(system_id)
+
+    @property
+    def native_value(self) -> str:
+        labels: list[str] = []
+        for (sid, _zid), z in (self.coordinator.data or {}).items():
+            if sid != self._sid:
+                continue
+            errs = z.get("errors") or []
+            for item in errs:
+                if isinstance(item, dict):
+                    v = next(iter(item.values()), None)
+                    if isinstance(v, str) and v.strip():
+                        labels.append(v.strip())
+        seen = set()
+        dedup = [x for x in labels if not (x in seen or seen.add(x))]
+        return ", ".join(dedup) if dedup else "Sin errores"
+
+class SystemProfileSensor(_BaseAZEntity):
+    """Perfil detectado del Sistema (diagnóstico)."""
+    _attr_icon = "mdi:information-outline"
+
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
+        device = DeviceInfo(
+            identifiers={(DOMAIN, f"system-{system_id}")},
+            name=f"Sistema {system_id}",
+            manufacturer="Airzone",
+            model="HVAC System",
+        )
+        super().__init__(coordinator, "Perfil detectado", f"{DOMAIN}_system_{system_id}_profile", device)
+        self._sid = int(system_id)
+
+    @property
+    def native_value(self) -> str:
+        prof = (self.coordinator.system_profiles or {}).get(self._sid, {})
+        return prof.get("profile") or "Desconocido"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        prof = (self.coordinator.system_profiles or {}).get(self._sid, {}) or {}
         return {
-            "identifiers": {(DOMAIN, f"airzone_{self.system_id}_{self.zone_id}")},
-            "via_device": (DOMAIN, f"airzone_{self.system_id}_{self.zone_id}"),
-            "manufacturer": "Airzone",
-            "model": self._model,
-            "name": f"Airzone Zone {self._zone_name}",
+            "api_version": self.coordinator.version,
+            "transporte_hvac": self.coordinator.transport_hvac,
+            "transporte_iaq": self.coordinator.transport_iaq,
+            "capabilities": prof.get("capabilities"),
+            "zone_count": prof.get("zone_count"),
+            "iaq_count": prof.get("iaq_count"),
         }
 
-# =============================================================================
-#                           SENSORES DE ZONA
-# =============================================================================
+# ---------------- zones ----------------
 
-class AirzoneZoneTemperatureSensor(AirzoneZoneBaseSensor):
-    """Sensor de temperatura de la zona."""
+class _ZoneBase(_BaseAZEntity):
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, zone_id: int, name: str, unique: str) -> None:
+        device = DeviceInfo(
+            identifiers={(DOMAIN, f"{system_id}-{zone_id}")},
+            name=(coordinator.get_zone(system_id, zone_id) or {}).get("name") or f"Zone {system_id}/{zone_id}",
+            manufacturer="Airzone",
+            model="Local API zone",
+        )
+        super().__init__(coordinator, name, unique, device)
+        self._sid = int(system_id)
+        self._zid = int(zone_id)
 
-    def __init__(self, coordinator, zone_data):
-        super().__init__(coordinator, zone_data)
-        self._attr_unique_id = f"airzone_temp_{self.system_id}_{self.zone_id}"
+    def _zone(self) -> dict:
+        return self.coordinator.get_zone(self._sid, self._zid) or {}
 
-    @property
-    def name(self):
-        return f"{self._zone_name} Temperature"
+class ZoneNumberSensor(_ZoneBase):
+    _attr_state_class = "measurement"
 
-    @property
-    def native_unit_of_measurement(self):
-        return UnitOfTemperature.CELSIUS
-
-    @property
-    def native_value(self):
-        return self.zone_data.get("roomTemp")
-
-    @property
-    def icon(self):
-        return "mdi:thermometer"
-
-
-class AirzoneZoneHumiditySensor(AirzoneZoneBaseSensor):
-    """Sensor de humedad de la zona."""
-
-    def __init__(self, coordinator, zone_data):
-        super().__init__(coordinator, zone_data)
-        self._attr_unique_id = f"airzone_humidity_{self.system_id}_{self.zone_id}"
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, zone_id: int, *, key: str, name: str, unit: str | None = None) -> None:
+        super().__init__(coordinator, system_id, zone_id, name, f"{DOMAIN}_zone_{system_id}_{zone_id}_{key}")
+        self._key = key
+        self._attr_native_unit_of_measurement = unit
 
     @property
-    def name(self):
-        return f"{self._zone_name} Humidity"
+    def native_value(self) -> float | int | None:
+        return self._zone().get(self._key)
+
+class ZoneTempSensor(_ZoneBase):
+    _attr_state_class = "measurement"
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_icon = "mdi:thermometer"
+
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, zone_id: int) -> None:
+        super().__init__(coordinator, system_id, zone_id, "Temperatura", f"{DOMAIN}_zone_{system_id}_{zone_id}_roomtemp")
 
     @property
-    def native_unit_of_measurement(self):
-        return PERCENTAGE
+    def native_value(self) -> float | None:
+        return self._zone().get("roomTemp")
+
+class ZoneErrorsTextSensor(_ZoneBase):
+    _attr_icon = "mdi:alert-circle-outline"
+
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, zone_id: int) -> None:
+        super().__init__(coordinator, system_id, zone_id, "Errores de zona", f"{DOMAIN}_zone_{system_id}_{zone_id}_errors_text")
 
     @property
-    def native_value(self):
-        return self.zone_data.get("humidity")
+    def native_value(self) -> str:
+        errs = (self._zone().get("errors") or [])
+        labels: list[str] = []
+        for item in errs:
+            if isinstance(item, dict):
+                v = next(iter(item.values()), None)
+                if isinstance(v, str) and v.strip():
+                    labels.append(v.strip())
+        return ", ".join(labels) if labels else "Sin errores"
+
+class ZoneProfileSensor(_ZoneBase):
+    """Perfil de la zona (diagnóstico)."""
+    _attr_icon = "mdi:information-outline"
+
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, zone_id: int) -> None:
+        super().__init__(coordinator, system_id, zone_id, "Perfil de zona", f"{DOMAIN}_zone_{system_id}_{zone_id}_profile")
 
     @property
-    def icon(self):
-        return "mdi:water-percent"
-
-
-class AirzoneZoneBatterySensor(AirzoneZoneBaseSensor):
-    """Muestra la batería de la zona. Ajusta si tu sistema no usa 0-100."""
-    _attr_device_class = SensorDeviceClass.BATTERY
-    _attr_state_class = SensorStateClass.MEASUREMENT
-
-    def __init__(self, coordinator, zone_data):
-        super().__init__(coordinator, zone_data)
-        self._attr_unique_id = f"airzone_battery_{self.system_id}_{self.zone_id}"
+    def native_value(self) -> str:
+        prof = (self.coordinator.zone_profiles or {}).get((self._sid, self._zid), {})
+        return prof.get("profile") or "Desconocido"
 
     @property
-    def name(self):
-        return f"{self._zone_name} Battery"
-
-    @property
-    def native_unit_of_measurement(self):
-        return PERCENTAGE
-
-    @property
-    def native_value(self):
-        battery_raw = self.zone_data.get("battery", None)
-        if battery_raw is None:
-            return None
-        # Si se reporta un entero 0..100:
-        try:
-            battery_val = int(battery_raw)
-            if battery_val < 0:
-                battery_val = 0
-            if battery_val > 100:
-                battery_val = 100
-            return battery_val
-        except ValueError:
-            # Si no es un entero, podría ser "Ok"/"Low", etc.
-            return None
-
-    @property
-    def icon(self):
-        # Ícono genérico para batería; se podría personalizar por nivel.
-        return "mdi:battery"
-
-
-class AirzoneZoneFirmwareSensor(AirzoneZoneBaseSensor):
-    """Firmware reportado por el termostato de la zona."""
-
-    def __init__(self, coordinator, zone_data):
-        super().__init__(coordinator, zone_data)
-        self._attr_unique_id = f"airzone_firmware_{self.system_id}_{self.zone_id}"
-
-    @property
-    def name(self):
-        return f"{self._zone_name} Firmware"
-
-    @property
-    def native_value(self):
-        return self.zone_data.get("thermos_firmware")
-
-    @property
-    def icon(self):
-        return "mdi:chip"
-
-
-class AirzoneZoneHeatDemandSensor(AirzoneZoneBaseSensor):
-    """Sensor que muestra la demanda de calor en la zona."""
-
-    def __init__(self, coordinator, zone_data):
-        super().__init__(coordinator, zone_data)
-        self._attr_unique_id = f"airzone_heat_demand_{self.system_id}_{self.zone_id}"
-
-    @property
-    def name(self):
-        return f"{self._zone_name} Heat Demand"
-
-    @property
-    def native_value(self):
-        return self.zone_data.get("heat_demand")
-
-    @property
-    def icon(self):
-        return "mdi:fire"
-
-
-class AirzoneZoneColdDemandSensor(AirzoneZoneBaseSensor):
-    """Sensor que muestra la demanda de frío en la zona."""
-
-    def __init__(self, coordinator, zone_data):
-        super().__init__(coordinator, zone_data)
-        self._attr_unique_id = f"airzone_cold_demand_{self.system_id}_{self.zone_id}"
-
-    @property
-    def name(self):
-        return f"{self._zone_name} Cold Demand"
-
-    @property
-    def native_value(self):
-        return self.zone_data.get("cold_demand")
-
-    @property
-    def icon(self):
-        return "mdi:snowflake"
-
-
-class AirzoneZoneAirDemandSensor(AirzoneZoneBaseSensor):
-    """Sensor que muestra la demanda de aire/ventilación en la zona."""
-
-    def __init__(self, coordinator, zone_data):
-        super().__init__(coordinator, zone_data)
-        self._attr_unique_id = f"airzone_air_demand_{self.system_id}_{self.zone_id}"
-
-    @property
-    def name(self):
-        return f"{self._zone_name} Air Demand"
-
-    @property
-    def native_value(self):
-        return self.zone_data.get("air_demand")
-
-    @property
-    def icon(self):
-        return "mdi:fan"
-
-
-class AirzoneZoneOpenWindowSensor(AirzoneZoneBaseSensor):
-    """Sensor para el estado de ventana abierta en la zona."""
-
-    def __init__(self, coordinator, zone_data):
-        super().__init__(coordinator, zone_data)
-        self._attr_unique_id = f"airzone_open_window_{self.system_id}_{self.zone_id}"
-
-    @property
-    def name(self):
-        return f"{self._zone_name} Open Window"
-
-    @property
-    def native_value(self):
-        value = self.zone_data.get("open_window")
-        if value is None:
-            return None
-        return "Open" if value == 1 else "Closed"
-
-    @property
-    def icon(self):
-        # Podríamos devolver un ícono distinto según open/closed
-        if self.native_value == "Open":
-            return "mdi:window-open"
-        else:
-            return "mdi:window-closed"
-
-
-class AirzoneZoneCoolSetpointSensor(AirzoneZoneBaseSensor):
-    """Sensor que muestra la consigna de frío en modo doble consigna."""
-
-    def __init__(self, coordinator, zone_data):
-        super().__init__(coordinator, zone_data)
-        self._attr_unique_id = f"airzone_cool_setpoint_{self.system_id}_{self.zone_id}"
-
-    @property
-    def name(self):
-        return f"{self._zone_name} Cool Setpoint"
-
-    @property
-    def native_value(self):
-        return self.zone_data.get("coolsetpoint")
-
-    @property
-    def icon(self):
-        return "mdi:snowflake-thermometer"
-
-
-class AirzoneZoneHeatSetpointSensor(AirzoneZoneBaseSensor):
-    """Sensor que muestra la consigna de calor en modo doble consigna."""
-
-    def __init__(self, coordinator, zone_data):
-        super().__init__(coordinator, zone_data)
-        self._attr_unique_id = f"airzone_heat_setpoint_{self.system_id}_{self.zone_id}"
-
-    @property
-    def name(self):
-        return f"{self._zone_name} Heat Setpoint"
-
-    @property
-    def native_value(self):
-        return self.zone_data.get("heatsetpoint")
-
-    @property
-    def icon(self):
-        return "mdi:fire"
-
-
-# ===================== NUEVO: SENSOR DE CONSUMO =====================
-class AirzoneZoneConsumptionSensor(AirzoneZoneBaseSensor):
-    """
-    Muestra el valor de consumo/energía/potencia reportado por la API.
-    Ajusta el nombre 'consumption_ue' si tu firmware usa otro campo,
-    y la unidad si es kWh en vez de W, etc.
-    """
-    _attr_device_class = SensorDeviceClass.POWER  # o SensorDeviceClass.ENERGY
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    # Si la API da W -> UnitOfPower.WATT
-    # Si da kWh -> UnitOfEnergy.KILO_WATT_HOUR
-    from homeassistant.const import UnitOfPower
-    _attr_native_unit_of_measurement = UnitOfPower.WATT
-
-    def __init__(self, coordinator, zone_data):
-        super().__init__(coordinator, zone_data)
-        self._attr_unique_id = f"airzone_consumption_{self.system_id}_{self.zone_id}"
-
-    @property
-    def name(self):
-        return f"{self._zone_name} Consumption"
-
-    @property
-    def native_value(self):
-        # Ajusta el campo 'consumption_ue' al que use tu API
-        return self.zone_data.get("consumption_ue")
-
-    @property
-    def icon(self):
-        return "mdi:flash"
-
-# =============================================================================
-#                          SENSORES IAQ (globales)
-# =============================================================================
-
-class AirzoneIAQBaseSensor(SensorEntity):
-    """Base para los sensores IAQ globales."""
-    _attr_should_poll = False
-
-    def __init__(self, coordinator):
-        self.coordinator = coordinator
-        self._attr_unique_id = None
-
-    @property
-    def available(self):
-        return self.coordinator.last_update_success
-
-    async def async_added_to_hass(self):
-        self.coordinator.async_add_listener(self.async_write_ha_state)
-
-    async def async_will_remove_from_hass(self):
-        self.coordinator.async_remove_listener(self.async_write_ha_state)
-
-    @property
-    def device_info(self):
+    def extra_state_attributes(self) -> dict:
+        prof = (self.coordinator.zone_profiles or {}).get((self._sid, self._zid), {}) or {}
         return {
-            "identifiers": {(DOMAIN, "airzone_iaq")},
-            "name": "Airzone IAQ Sensor",
-            "manufacturer": "Airzone",
-            "model": "Local API IAQ",
+            "capabilities": prof.get("capabilities"),
         }
 
-    @property
-    def _iaq_data(self):
-        iaq = self.coordinator.data.get("iaq_data", {})
-        if "data" in iaq and isinstance(iaq["data"], list) and iaq["data"]:
-            return iaq["data"][0]  # Tomamos solo el primer sensor IAQ
-        return {}
+# ---------------- IAQ (real) ----------------
 
+class _IAQBase(_BaseAZEntity):
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, iaq_id: int, name: str, unique: str) -> None:
+        device = DeviceInfo(
+            identifiers={(DOMAIN, f"iaq-{system_id}-{iaq_id}")},
+            name=(coordinator.get_iaq(system_id, iaq_id) or {}).get("name") or f"IAQ {system_id}/{iaq_id}",
+            manufacturer="Airzone",
+            model="IAQ sensor",
+        )
+        super().__init__(coordinator, name, unique, device)
+        self._sid = int(system_id)
+        self._iid = int(iaq_id)
 
-class AirzoneIAQCO2Sensor(AirzoneIAQBaseSensor):
-    """Sensor de CO2 IAQ."""
+    def _iaq(self) -> dict:
+        return self.coordinator.get_iaq(self._sid, self._iid) or {}
 
-    def __init__(self, coordinator):
-        super().__init__(coordinator)
-        self._attr_unique_id = "airzone_iaq_co2"
+class IAQScoreSensor(_IAQBase):
+    _attr_state_class = "measurement"
+    _attr_icon = "mdi:gauge"
 
-    @property
-    def name(self):
-        return "Airzone IAQ CO₂"
-
-    @property
-    def native_unit_of_measurement(self):
-        return "ppm"
-
-    @property
-    def native_value(self):
-        return self._iaq_data.get("co2_value")
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, iaq_id: int) -> None:
+        super().__init__(coordinator, system_id, iaq_id, "IAQ score", f"{DOMAIN}_iaq_{system_id}_{iaq_id}_score")
 
     @property
-    def icon(self):
-        return "mdi:molecule-co2"
+    def native_value(self) -> float | None:
+        return self._iaq().get("iaq_score")
 
+class IAQCo2Sensor(_IAQBase):
+    _attr_state_class = "measurement"
+    _attr_native_unit_of_measurement = CONCENTRATION_PARTS_PER_MILLION
+    _attr_icon = "mdi:molecule-co2"
 
-class AirzoneIAQPM25Sensor(AirzoneIAQBaseSensor):
-    """Sensor de PM2.5 IAQ."""
-
-    def __init__(self, coordinator):
-        super().__init__(coordinator)
-        self._attr_unique_id = "airzone_iaq_pm25"
-
-    @property
-    def name(self):
-        return "Airzone IAQ PM2.5"
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, iaq_id: int) -> None:
+        super().__init__(coordinator, system_id, iaq_id, "CO₂", f"{DOMAIN}_iaq_{system_id}_{iaq_id}_co2")
 
     @property
-    def native_unit_of_measurement(self):
-        return "µg/m³"
+    def native_value(self) -> float | None:
+        v = self._iaq().get("co2_value")
+        return v if v is not None else self._iaq().get("co2")
+
+class IAQPM25Sensor(_IAQBase):
+    _attr_state_class = "measurement"
+    _attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+    _attr_icon = "mdi:weather-hazy"
+
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, iaq_id: int) -> None:
+        super().__init__(coordinator, system_id, iaq_id, "PM2.5", f"{DOMAIN}_iaq_{system_id}_{iaq_id}_pm25")
 
     @property
-    def native_value(self):
-        return self._iaq_data.get("pm2_5_value")
+    def native_value(self) -> float | None:
+        v = self._iaq().get("pm2_5_value")
+        return v if v is not None else self._iaq().get("pm2_5")
+
+class IAQPM10Sensor(_IAQBase):
+    _attr_state_class = "measurement"
+    _attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+    _attr_icon = "mdi:weather-hazy"
+
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, iaq_id: int) -> None:
+        super().__init__(coordinator, system_id, iaq_id, "PM10", f"{DOMAIN}_iaq_{system_id}_{iaq_id}_pm10")
 
     @property
-    def icon(self):
-        return "mdi:air-filter"
+    def native_value(self) -> float | None:
+        v = self._iaq().get("pm10_value")
+        return v if v is not None else self._iaq().get("pm10")
 
+class IAQTVOCSensor(_IAQBase):
+    _attr_state_class = "measurement"
+    _attr_native_unit_of_measurement = CONCENTRATION_PARTS_PER_BILLION
+    _attr_icon = "mdi:chemical-weapon"
 
-class AirzoneIAQPM10Sensor(AirzoneIAQBaseSensor):
-    """Sensor de PM10 IAQ."""
-
-    def __init__(self, coordinator):
-        super().__init__(coordinator)
-        self._attr_unique_id = "airzone_iaq_pm10"
-
-    @property
-    def name(self):
-        return "Airzone IAQ PM10"
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, iaq_id: int) -> None:
+        super().__init__(coordinator, system_id, iaq_id, "TVOC", f"{DOMAIN}_iaq_{system_id}_{iaq_id}_tvoc")
 
     @property
-    def native_unit_of_measurement(self):
-        return "µg/m³"
+    def native_value(self) -> float | None:
+        v = self._iaq().get("tvoc_value")
+        return v if v is not None else self._iaq().get("tvoc")
+
+class IAQPressureSensor(_IAQBase):
+    _attr_state_class = "measurement"
+    _attr_native_unit_of_measurement = UnitOfPressure.HPA
+    _attr_icon = "mdi:gauge-low"
+
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, iaq_id: int) -> None:
+        super().__init__(coordinator, system_id, iaq_id, "Presión", f"{DOMAIN}_iaq_{system_id}_{iaq_id}_pressure")
 
     @property
-    def native_value(self):
-        return self._iaq_data.get("pm10_value")
+    def native_value(self) -> float | None:
+        v = self._iaq().get("pressure_value")
+        return v if v is not None else self._iaq().get("pressure")
+
+class IAQHumiditySensor(_IAQBase):
+    """Humedad relativa reportada por el IAQ si el firmware la expone."""
+    _attr_state_class = "measurement"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_icon = "mdi:water-percent"
+
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, iaq_id: int) -> None:
+        super().__init__(coordinator, system_id, iaq_id, "Humedad", f"{DOMAIN}_iaq_{system_id}_{iaq_id}_humidity")
 
     @property
-    def icon(self):
-        return "mdi:air-filter"
-
-
-class AirzoneIAQTVOCSensor(AirzoneIAQBaseSensor):
-    """Sensor de TVOC IAQ."""
-
-    def __init__(self, coordinator):
-        super().__init__(coordinator)
-        self._attr_unique_id = "airzone_iaq_tvoc"
-
-    @property
-    def name(self):
-        return "Airzone IAQ TVOC"
-
-    @property
-    def native_unit_of_measurement(self):
-        return "ppb"
-
-    @property
-    def native_value(self):
-        return self._iaq_data.get("tvoc_value")
-
-    @property
-    def icon(self):
-        return "mdi:air-filter"
-
-
-class AirzoneIAQPressureSensor(AirzoneIAQBaseSensor):
-    """Sensor de presión IAQ."""
-
-    def __init__(self, coordinator):
-        super().__init__(coordinator)
-        self._attr_unique_id = "airzone_iaq_pressure"
-
-    @property
-    def name(self):
-        return "Airzone IAQ Pressure"
-
-    @property
-    def native_unit_of_measurement(self):
-        return "hPa"
-
-    @property
-    def native_value(self):
-        return self._iaq_data.get("pressure_value")
-
-    @property
-    def icon(self):
-        return "mdi:gauge"
-
-
-class AirzoneIAQIndexSensor(AirzoneIAQBaseSensor):
-    """Sensor de índice IAQ."""
-
-    def __init__(self, coordinator):
-        super().__init__(coordinator)
-        self._attr_unique_id = "airzone_iaq_index"
-
-    @property
-    def name(self):
-        return "Airzone IAQ Index"
-
-    @property
-    def native_value(self):
-        return self._iaq_data.get("iaq_index")
-
-    @property
-    def icon(self):
-        return "mdi:gauge"
-
-
-class AirzoneIAQScoreSensor(AirzoneIAQBaseSensor):
-    """Sensor de puntuación IAQ."""
-
-    def __init__(self, coordinator):
-        super().__init__(coordinator)
-        self._attr_unique_id = "airzone_iaq_score"
-
-    @property
-    def name(self):
-        return "Airzone IAQ Score"
-
-    @property
-    def native_value(self):
-        return self._iaq_data.get("iaq_score")
-
-    @property
-    def icon(self):
-        return "mdi:gauge"
-
-
-class AirzoneIAQVentModeSensor(AirzoneIAQBaseSensor):
-    """Sensor del modo de ventilación IAQ."""
-
-    def __init__(self, coordinator):
-        super().__init__(coordinator)
-        self._attr_unique_id = "airzone_iaq_ventmode"
-
-    @property
-    def name(self):
-        return "Airzone IAQ Vent Mode"
-
-    @property
-    def native_value(self):
-        raw = self._iaq_data.get("iaq_mode_vent")
-        if raw == 0:
-            return "Off"
-        elif raw == 1:
-            return "On"
-        elif raw == 2:
-            return "Auto"
+    def native_value(self) -> float | None:
+        d = self._iaq()
+        for k in ("rh_value", "rh", "humidity"):
+            v = d.get(k)
+            if v is not None:
+                return v
         return None
 
-    @property
-    def icon(self):
-        return "mdi:fan"
+# ---------------- IAQ fallback (si /iaq no existe) ----------------
 
+class IAQQualityFallbackSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:air-filter"
+    _attr_name = "Calidad IAQ"
+    _attr_unique_id = None
 
-# =============================================================================
-#                SENSORES DEL SISTEMA GLOBAL (Airzone System)
-# =============================================================================
-
-class AirzoneSystemModeSensor(SensorEntity):
-    """Sensor que muestra el modo global del sistema."""
-
-    _attr_name = "Airzone System Mode"
-    _attr_unique_id = "airzone_system_mode"
-    _attr_native_unit_of_measurement = None
-
-    def __init__(self, coordinator):
-        self.coordinator = coordinator
-        self._attr_should_poll = False
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
+        super().__init__(coordinator)
+        self._sid = int(system_id)
+        self._attr_unique_id = f"{DOMAIN}_iaq_fallback_{self._sid}"
 
     @property
-    def native_value(self):
-        hvac_system = self.coordinator.data.get("hvac_system", {})
-        mode = hvac_system.get("mode")
-        if mode is None:
-            return None
-        mode_mapping = {0: "Stop", 3: "Heat", 1: "Ventilación", 2: "Auto"}
-        return mode_mapping.get(mode, mode)
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"system-{self._sid}")},
+            name=f"Sistema {self._sid}",
+            manufacturer="Airzone",
+            model="HVAC System",
+        )
 
     @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
-            "manufacturer": "Airzone",
-            "model": "Central Controller",
-        }
-
-    @property
-    def icon(self):
-        return "mdi:information-outline"
-
-
-class AirzoneSystemFanSpeedSensor(SensorEntity):
-    """Sensor que muestra la velocidad del ventilador del sistema."""
-    _attr_name = "Airzone Fan Speed"
-    _attr_unique_id = "airzone_system_fan_speed"
-    _attr_native_unit_of_measurement = None
-
-    def __init__(self, coordinator):
-        self.coordinator = coordinator
-        self._attr_should_poll = False
-
-    @property
-    def native_value(self):
-        hvac_system = self.coordinator.data.get("hvac_system", {})
-        return hvac_system.get("speed")
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
-            "manufacturer": "Airzone",
-            "model": "Central Controller",
-        }
-
-    @property
-    def icon(self):
-        return "mdi:fan"
-
-
-class AirzoneSystemSleepSensor(SensorEntity):
-    """Sensor que indica si el modo dormir está activado."""
-    _attr_name = "Airzone Sleep Mode"
-    _attr_unique_id = "airzone_system_sleep"
-    _attr_native_unit_of_measurement = None
-
-    def __init__(self, coordinator):
-        self.coordinator = coordinator
-        self._attr_should_poll = False
-
-    @property
-    def native_value(self):
-        hvac_system = self.coordinator.data.get("hvac_system", {})
-        sleep_value = hvac_system.get("sleep")
-        if sleep_value is None:
-            return None
-        return "On" if sleep_value == 1 else "Off"
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
-            "manufacturer": "Airzone",
-            "model": "Central Controller",
-        }
-
-    @property
-    def icon(self):
-        return "mdi:sleep"
-
-
-class AirzoneSystemIDSensor(SensorEntity):
-    """Muestra el systemID del sistema global."""
-    _attr_name = "Airzone System ID"
-    _attr_unique_id = "airzone_system_id"
-
-    def __init__(self, coordinator):
-        self.coordinator = coordinator
-        self._attr_should_poll = False
-
-    @property
-    def native_value(self):
-        hvac_system = self.coordinator.data.get("hvac_system", {})
-        return hvac_system.get("systemID")
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
-            "manufacturer": "Airzone",
-            "model": "Central Controller",
-        }
-
-    @property
-    def icon(self):
-        return "mdi:numeric"
-
-
-class AirzoneSystemFirmwareSensor(SensorEntity):
-    """Muestra la versión de firmware del sistema."""
-    _attr_name = "Airzone System Firmware"
-    _attr_unique_id = "airzone_system_firmware"
-
-    def __init__(self, coordinator):
-        self.coordinator = coordinator
-        self._attr_should_poll = False
-
-    @property
-    def native_value(self):
-        hvac_system = self.coordinator.data.get("hvac_system", {})
-        return hvac_system.get("firmware")
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
-            "manufacturer": "Airzone",
-            "model": "Central Controller",
-        }
-
-    @property
-    def icon(self):
-        return "mdi:chip"
-
-
-class AirzoneSystemErrorsSensor(SensorEntity):
-    """Muestra los errores globales del sistema."""
-    _attr_name = "Airzone System Errors"
-    _attr_unique_id = "airzone_system_errors"
-
-    def __init__(self, coordinator):
-        self.coordinator = coordinator
-        self._attr_should_poll = False
-
-    @property
-    def native_value(self):
-        hvac_system = self.coordinator.data.get("hvac_system", {})
-        errors = hvac_system.get("errors", [])
-        if not errors:
-            return "No errors"
-        return ", ".join(str(e) for e in errors)
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
-            "manufacturer": "Airzone",
-            "model": "Central Controller",
-        }
-
-    @property
-    def icon(self):
-        return "mdi:alert-circle"
-
-
-class AirzoneSystemUnitsSensor(SensorEntity):
-    """Muestra las unidades globales del sistema (0=Celsius, 1=Fahrenheit)."""
-    _attr_name = "Airzone System Units"
-    _attr_unique_id = "airzone_system_units"
-
-    def __init__(self, coordinator):
-        self.coordinator = coordinator
-        self._attr_should_poll = False
-
-    @property
-    def native_value(self):
-        hvac_system = self.coordinator.data.get("hvac_system", {})
-        units = hvac_system.get("units")
-        if units is None:
-            return None
-        units_map = {0: "Celsius", 1: "Fahrenheit"}
-        return units_map.get(units, f"Unknown ({units})")
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, "system")},
-            "name": "Airzone System",
-            "manufacturer": "Airzone",
-            "model": "Central Controller",
-        }
-
-    @property
-    def icon(self):
-        return "mdi:thermometer"
-
-
-# =============================================================================
-#          SENSOR AGREGADO: DETECTAR BATERÍAS BAJAS EN TODAS LAS ZONAS
-# =============================================================================
-
-class AirzoneLowBatterySensor(SensorEntity):
-    """Sensor que agrega las zonas con batería baja."""
-    _attr_name = "Zones amb Bateria Baixa"
-    _attr_unique_id = "airzone_low_battery"
-
-    def __init__(self, coordinator):
-        self.coordinator = coordinator
-        self._attr_should_poll = False
-        self._attr_native_value = "Ninguna"
-
-    async def async_added_to_hass(self):
-        self.coordinator.async_add_listener(self._handle_coordinator_update)
-
-    async def async_will_remove_from_hass(self):
-        self.coordinator.async_remove_listener(self._handle_coordinator_update)
-
-    def _handle_coordinator_update(self):
-        """Revisa qué zonas reportan batería baja."""
-        zones = self.coordinator.data.get("hvac_zone", {}).get("data", [])
-        low_battery_zones = []
-        for z in zones:
-            name = z.get("name", f"Zona {z.get('zoneID')}")
-            battery_level = z.get("battery")
-            # Si battery es un número, podrías chequear <20 como ejemplo de "batería baja"
-            if battery_level is not None:
-                try:
-                    level_int = int(battery_level)
-                    if level_int < 20:
-                        low_battery_zones.append(name)
-                except ValueError:
-                    # Si no es un número y, por ejemplo, es "Low"
-                    if str(battery_level).lower() == "low":
-                        low_battery_zones.append(name)
-
-            # Algunas instalaciones devuelven 'Error 8' si la batería está baja
-            # o el termostato Lite no se comunica bien.
-            errors = z.get("errors", [])
-            for err in errors:
-                if "Error 8" in err.values():
-                    if name not in low_battery_zones:
-                        low_battery_zones.append(name)
-                    break
-
-        self._attr_native_value = ", ".join(low_battery_zones) if low_battery_zones else "Ninguna"
-        self.async_write_ha_state()
-
-    @property
-    def device_info(self):
-        hvac_system = self.coordinator.data.get("hvac_system", {})
-        model_name = hvac_system.get("model", "Airzone System")
-        return {
-            "identifiers": {(DOMAIN, "system")},
-            "name": f"Airzone System {model_name}",
-            "manufacturer": "Airzone",
-            "model": model_name,
-        }
-
-    @property
-    def icon(self):
-        return "mdi:battery-alert"
+    def native_value(self) -> str | int | None:
+        d = (self.coordinator.iaq_fallback or {}).get(self._sid) or {}
+        val = d.get("aq_quality")
+        mapping = {0: "Buena", 1: "Regular", 2: "Mala"}
+        if isinstance(val, int) and val in mapping:
+            return mapping[val]
+        return val
