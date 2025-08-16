@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import aiohttp
 import async_timeout
@@ -20,125 +20,152 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
 )
 
-API_BASE = "http://{host}:{port}/api/v1"
+# Rutas candidatas de la Local API según variantes vistas en campo
+CANDIDATE_PREFIXES: list[str] = ["", "/api/v1", "/airzone/local/api/v1", "/lapi/v1"]
 
+# ---- utilidades de prueba de conectividad ----
 
-async def _get_json(session: aiohttp.ClientSession, url: str) -> dict:
-    async with async_timeout.timeout(10):
-        async with session.get(url) as resp:
-            text = await resp.text()
-            if resp.status != 200:
-                raise RuntimeError(f"GET {url} -> {resp.status}: {text}")
+async def _probe_one(hass: HomeAssistant, host: str, port: int, prefix: str) -> bool:
+    """Devuelve True si el Airzone responde en esta combinación host/port/prefix."""
+    base = f"http://{host}:{port}{prefix}"
+    timeout = 6
+    try:
+        async with aiohttp.ClientSession() as s:
+            # /webserver (GET y POST)
             try:
-                return await resp.json(content_type=None)
+                with async_timeout.timeout(timeout):
+                    async with s.get(f"{base}/webserver", timeout=timeout) as r:
+                        if r.status == 200:
+                            return True
             except Exception:
-                return {"raw": text}
-
-
-async def _post_json(session: aiohttp.ClientSession, url: str, json_body: dict) -> dict:
-    async with async_timeout.timeout(10):
-        async with session.post(url, json=json_body) as resp:
-            text = await resp.text()
-            if resp.status != 200:
-                raise RuntimeError(f"POST {url} -> {resp.status}: {text}")
+                pass
             try:
-                return await resp.json(content_type=None)
+                with async_timeout.timeout(timeout):
+                    async with s.post(f"{base}/webserver", json={}, timeout=timeout) as r:
+                        if r.status == 200:
+                            return True
             except Exception:
-                return {"raw": text}
+                pass
+            # /hvac (GET broadcast y POST broadcast)
+            try:
+                with async_timeout.timeout(timeout):
+                    async with s.get(f"{base}/hvac", params={"systemid": 0, "zoneid": 0}, timeout=timeout) as r:
+                        if r.status == 200:
+                            return True
+            except Exception:
+                pass
+            try:
+                with async_timeout.timeout(timeout):
+                    async with s.post(f"{base}/hvac", json={"systemID": 0, "zoneID": 0}, timeout=timeout) as r:
+                        if r.status == 200:
+                            return True
+            except Exception:
+                pass
+    except Exception:
+        return False
+    return False
 
 
-async def _fetch_device_info(hass: HomeAssistant, host: str, port: int) -> dict:
-    """Devuelve {'mac','name','model','version'} usando /webserver; valida /hvac."""
-    async with aiohttp.ClientSession() as session:
-        # Preferimos /webserver para leer MAC/modelo
-        try:
-            data = await _get_json(session, API_BASE.format(host=host, port=port) + "/webserver")
-        except Exception:
-            data = {}
+async def _autodetect_prefix(hass: HomeAssistant, host: str, port: int) -> str | None:
+    """Devuelve el primer prefijo que responde o None si ninguno responde."""
+    for pref in CANDIDATE_PREFIXES:
+        ok = await _probe_one(hass, host, port, pref)
+        if ok:
+            return pref
+    return None
 
-        mac: Optional[str] = (data or {}).get("mac") or (data or {}).get("macAddress")
-        name = (data or {}).get("name") or (data or {}).get("hostname") or f"Airzone {host}"
-        model = (data or {}).get("product") or (data or {}).get("model") or "Airzone"
-        version = (data or {}).get("version") or (data or {}).get("fw")
 
-        # Probamos /hvac para verificar que la API responde
-        try:
-            await _post_json(
-                session,
-                API_BASE.format(host=host, port=port) + "/hvac",
-                {"systemID": 0, "zoneID": 0},
-            )
-        except Exception:
-            # Si /webserver nos dio MAC lo aceptamos; si no, fallamos
-            if not mac:
-                raise
-
-        return {"mac": mac, "name": name, "model": model, "version": version}
-
+# ---- Config Flow ----
 
 class AirzoneConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Flujo de configuración: manual + zeroconf. unique_id = MAC."""
-
     VERSION = 1
 
     def __init__(self) -> None:
-        self._discovered_host: Optional[str] = None
+        self._host: str = ""
+        self._port: int = DEFAULT_PORT
+        self._prefix: str | None = None
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            host: str = user_input[CONF_HOST]
-            port: int = user_input[CONF_PORT]
-            try:
-                info = await _fetch_device_info(self.hass, host, port)
-            except Exception:
-                errors["base"] = "cannot_connect"
+            host = (user_input.get(CONF_HOST) or "").strip()
+            port = int(user_input.get(CONF_PORT) or DEFAULT_PORT)
+
+            if not host:
+                errors["base"] = "no_host"
             else:
-                unique = info.get("mac") or f"{host}:{port}"
-                await self.async_set_unique_id(unique)
-                self._abort_if_unique_id_configured()
-                title = info.get("name") or f"Airzone {host}"
-                return self.async_create_entry(
-                    title=title,
-                    data={CONF_HOST: host, CONF_PORT: port, "info": info},
-                )
+                # Auto-detección de prefijo de API
+                prefix = await _autodetect_prefix(self.hass, host, port)
+                if not prefix:
+                    # Guardamos host/port y vamos a selector manual de prefijo
+                    self._host = host
+                    self._port = port
+                    return await self.async_step_prefix()
+                else:
+                    self._host = host
+                    self._port = port
+                    self._prefix = prefix
+                    unique = f"{host}:{port}"
+                    await self.async_set_unique_id(unique)
+                    self._abort_if_unique_id_configured()
+
+                    data = {
+                        CONF_HOST: host,
+                        CONF_PORT: port,
+                        "api_prefix": prefix,
+                    }
+                    options = {
+                        CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL,
+                    }
+                    return self.async_create_entry(title=f"Airzone ({host})", data=data, options=options)
 
         schema = vol.Schema(
             {
-                vol.Optional(CONF_HOST, default=self._discovered_host or DEFAULT_HOST): str,
-                vol.Optional(CONF_PORT, default=DEFAULT_PORT): vol.All(int, vol.Range(min=1, max=65535)),
+                vol.Required(CONF_HOST, default=DEFAULT_HOST): str,
+                vol.Required(CONF_PORT, default=DEFAULT_PORT): int,
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
-    async def async_step_zeroconf(self, discovery_info: dict[str, Any]) -> FlowResult:
-        """mDNS: AZW5GRxxxx / AZPxxxxx..."""
-        host = discovery_info.get("host")
-        if not host:
-            return self.async_abort(reason="unknown")
-        self._discovered_host = host
+    async def async_step_prefix(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Paso manual para seleccionar el prefijo cuando la auto-detección falla."""
+        errors: dict[str, str] = {}
 
-        # Intentamos fijar unique_id ya en discovery (si podemos leer MAC)
-        try:
-            info = await _fetch_device_info(self.hass, host, DEFAULT_PORT)
-            unique = info.get("mac") or f"{host}:{DEFAULT_PORT}"
-            await self.async_set_unique_id(unique)
-            # Si ya existe, actualizamos datos (host/port) y abortamos
-            self._abort_if_unique_id_configured(
-                updates={CONF_HOST: host, CONF_PORT: DEFAULT_PORT, "info": info}
-            )
-        except Exception:
-            pass  # seguiremos a formulario
+        if user_input is not None:
+            pref = user_input.get("api_prefix") or ""
+            ok = await _probe_one(self.hass, self._host, self._port, pref)
+            if not ok:
+                errors["base"] = "cannot_connect"
+            else:
+                self._prefix = pref
+                unique = f"{self._host}:{self._port}"
+                await self.async_set_unique_id(unique)
+                self._abort_if_unique_id_configured()
 
-        # Llevamos los datos al formulario para que el usuario confirme
-        return await self.async_step_user({CONF_HOST: host, CONF_PORT: DEFAULT_PORT})
+                data = {
+                    CONF_HOST: self._host,
+                    CONF_PORT: self._port,
+                    "api_prefix": pref,
+                }
+                options = {
+                    CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL,
+                }
+                return self.async_create_entry(title=f"Airzone ({self._host})", data=data, options=options)
 
-    async def async_step_import(self, user_input=None) -> FlowResult:
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    "api_prefix",
+                    default=CANDIDATE_PREFIXES[0],
+                ): vol.In(CANDIDATE_PREFIXES),
+            }
+        )
+        return self.async_show_form(step_id="prefix", data_schema=schema, errors=errors)
+
+    async def async_step_import(self, user_input: dict[str, Any]) -> FlowResult:
+        # Soporte básico para YAML si alguien lo usa.
         return await self.async_step_user(user_input)
-
-    async def async_get_options_flow(self, entry: config_entries.ConfigEntry):
-        return OptionsFlowHandler(entry)
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
@@ -155,7 +182,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         schema = vol.Schema(
             {
                 vol.Required(CONF_SCAN_INTERVAL, default=defaults[CONF_SCAN_INTERVAL]): vol.All(
-                    int, vol.Range(min=5, max=300)
+                    int, vol.Range(min=2, max=300)
                 ),
             }
         )

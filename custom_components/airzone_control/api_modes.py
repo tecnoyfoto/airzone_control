@@ -1,110 +1,157 @@
 from __future__ import annotations
 """
-Mapping between Airzone Local API numeric mode codes and Home Assistant HVACMode.
+Traducción de códigos `mode` de la Local API de Airzone a HVACMode de Home Assistant
+y cálculo de los *modos permitidos* por zona de forma 100% dinámica a partir de la API.
 
-Rationale:
-- Some Airzone firmwares expose `modes` and `mode` as numeric codes.
-- We observed inconsistencies across prior versions of this integration, so we unify
-  the mapping here and every platform must import this module.
-- We also provide helpers to derive *allowed* hvac modes from a zone payload,
-  clamping out COOL/HEAT if the zone clearly lacks that capability (e.g. a caldera
-  only has heatsetpoint and no coolsetpoint).
+Tabla canónica (Local API):
+    1: STOP/OFF  (algunos firmwares aceptan 0 como OFF)
+    2: COOL
+    3: HEAT
+    4: FAN
+    5: DRY
+    7: AUTO
 """
+
+from typing import Iterable, List, Set
 from homeassistant.components.climate.const import HVACMode
 
-# Canonical translation used by official examples and 3rd party libs:
-# 0=Stop/Off, 1=Vent (Fan only), 2=Heat, 3=Cool, 4=Auto, 5=Dry
+# --- Mapeos canónicos ---
 API_TO_HVAC_MODE: dict[int, HVACMode] = {
     0: HVACMode.OFF,
-    1: HVACMode.FAN_ONLY,
-    2: HVACMode.HEAT,
-    3: HVACMode.COOL,
-    4: HVACMode.AUTO,
+    1: HVACMode.OFF,
+    2: HVACMode.COOL,
+    3: HVACMode.HEAT,
+    4: HVACMode.FAN_ONLY,
     5: HVACMode.DRY,
+    7: HVACMode.AUTO,
 }
 
+# OFF se maneja con on=0, no se mapea aquí.
 HVAC_TO_API_MODE: dict[HVACMode, int] = {
-    HVACMode.OFF: 0,
-    HVACMode.FAN_ONLY: 1,
-    HVACMode.HEAT: 2,
-    HVACMode.COOL: 3,
-    HVACMode.AUTO: 4,
+    HVACMode.COOL: 2,
+    HVACMode.HEAT: 3,
+    HVACMode.FAN_ONLY: 4,
     HVACMode.DRY: 5,
+    HVACMode.AUTO: 7,
 }
 
-def has_heat_capability(zone: dict) -> bool:
-    return any(k in zone for k in ("heatsetpoint", "heatmaxtemp", "heatmintemp"))
+# ---------- utilidades internas ----------
 
-def has_cool_capability(zone: dict) -> bool:
-    return any(k in zone for k in ("coolsetpoint", "coolmaxtemp", "coolmintemp"))
-
-def allowed_hvac_modes_for_zone(zone: dict) -> list[HVACMode]:
-    """Return the hvac modes the zone *should* expose in HA.
-
-    Priority:
-    1) If the API provides an explicit `modes` list, translate it.
-    2) Clamp by capabilities: drop COOL if no cool keys in payload; drop HEAT if no heat keys.
-    3) Always include OFF.
-    4) If nothing left (edge case), default to [OFF, HEAT] for water-based systems.
+def _translate_modes_list(codes: list) -> List[HVACMode]:
+    """Convierte una lista de códigos numéricos en HVACMode, manteniendo orden
+    y sin duplicados. OFF siempre se añade al principio.
     """
-    explicit = zone.get("modes")
-    result: list[HVACMode] = []
-    seen: set[HVACMode] = set()
+    out: List[HVACMode] = [HVACMode.OFF]
+    for c in codes:
+        try:
+            hvac = API_TO_HVAC_MODE.get(int(c))
+            if hvac and hvac not in out:
+                out.append(hvac)
+        except Exception:
+            continue
+    return out
 
-    if isinstance(explicit, list) and explicit:
-        for code in explicit:
-            ha = API_TO_HVAC_MODE.get(code)
-            if ha and ha not in seen:
-                seen.add(ha)
-                result.append(ha)
+def _has_any_heat_keys(z: dict) -> bool:
+    return any(k in z for k in ("heatsetpoint", "heatmintemp", "heatmaxtemp", "heat_demand"))
 
-    # Clamp by capability hints
-    heat_ok = has_heat_capability(zone)
-    cool_ok = has_cool_capability(zone)
-    if result:
-        if not heat_ok and HVACMode.HEAT in result:
-            result = [m for m in result if m != HVACMode.HEAT]
-            seen.discard(HVACMode.HEAT)
-        if not cool_ok and HVACMode.COOL in result:
-            result = [m for m in result if m != HVACMode.COOL]
-            seen.discard(HVACMode.COOL)
+def _has_any_cool_keys(z: dict) -> bool:
+    return any(k in z for k in ("coolsetpoint", "coolmintemp", "coolmaxtemp", "cold_demand"))
 
-    # If no explicit list, infer
-    if not result:
-        if heat_ok and cool_ok:
-            result = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
-        elif heat_ok:
-            result = [HVACMode.OFF, HVACMode.HEAT]
-        elif cool_ok:
-            result = [HVACMode.OFF, HVACMode.COOL]
-        else:
-            # Very bare payloads: be conservative (most common in caldera setups)
-            result = [HVACMode.OFF, HVACMode.HEAT]
+# ---------- API pública para las plataformas ----------
 
-    if HVACMode.OFF not in result:
-        result.insert(0, HVACMode.OFF)
-    return result
+def allowed_hvac_modes_for_zone(zone: dict) -> List[HVACMode]:
+    """Lista de modos HVAC permitidos para la *zona* de forma estrictamente dinámica.
 
-def translate_current_mode(zone: dict, allowed: list[HVACMode]) -> HVACMode:
-    """Translate `zone['mode']` to HVACMode, clamping to *allowed* list.
-
-    If the zone is off (`on` == 0), return HVACMode.OFF regardless of `mode`.
-    If the current code maps to a mode not in `allowed`, pick HEAT (if allowed)
-    for heating-only systems; otherwise fall back to OFF.
+    Prioridad de fuentes (todas provienen de la API):
+      1) `modes` de ZONA  -> se usan tal cual (traducidos).
+      2) `sys_modes`      -> inyectados por el coordinator a partir del payload de SISTEMA.
+      3) Fallback conservador sin inventar modos:
+         - OFF siempre.
+         - Si hay `mode` actual → añadimos solo ese (si no es OFF).
+         - En ausencia de lo anterior:
+             * Si la zona expone únicamente CLAVES de calor -> HEAT.
+             * Si la zona expone únicamente CLAVES de frío -> COOL.
+         - No añadimos AUTO ni FAN si la API no los enumera en `modes`.
     """
+    # 1) La propia zona nos dice sus modos
+    zm = zone.get("modes")
+    if isinstance(zm, list) and zm:
+        return _translate_modes_list(zm)
+
+    # 2) El sistema nos dice los modos y el coordinator los inyecta
+    sm = zone.get("sys_modes")
+    if isinstance(sm, list) and sm:
+        return _translate_modes_list(sm)
+
+    # 3) Fallback ultra-conservador
+    allowed: List[HVACMode] = [HVACMode.OFF]
+
+    # Si hay un `mode` numérico actual y es válido, añadimos solo ese
+    try:
+        current = zone.get("mode", None)
+        if current is not None:
+            hvac = API_TO_HVAC_MODE.get(int(current))
+            if hvac and hvac is not HVACMode.OFF and hvac not in allowed:
+                allowed.append(hvac)
+            return allowed
+    except Exception:
+        pass
+
+    # Si no sabemos el `mode`, miramos qué claves existen. Pero evitamos añadir
+    # calor y frío a la vez si el equipo expone setpoints "de cortesía".
+    has_heat = _has_any_heat_keys(zone)
+    has_cool = _has_any_cool_keys(zone)
+
+    if has_heat and not has_cool and HVACMode.HEAT not in allowed:
+        allowed.append(HVACMode.HEAT)
+    elif has_cool and not has_heat and HVACMode.COOL not in allowed:
+        allowed.append(HVACMode.COOL)
+    # Si hay ambos, no añadimos nada: sin `modes` de API preferimos no asumir.
+    # (El usuario seguirá pudiendo ver el modo actual si arriba lo devolvió `mode`.)
+
+    return allowed
+
+
+def translate_current_mode(zone: dict, allowed: Iterable[HVACMode]) -> HVACMode:
+    """Traduce zone['mode'] al HVACMode dentro de *allowed* con reglas seguras:
+       - on==0 → OFF
+       - si el código actual es válido y está en allowed → ese
+       - si solo hay una capacidad (heat/cool) en allowed → ese
+       - si hay demanda fría/caliente y el modo está permitido → priorizar demanda
+       - si nada cuadra → OFF
+    """
+    allowed_set: Set[HVACMode] = set(allowed)
+
+    # OFF si la zona reporta on:0
     try:
         if int(zone.get("on", 1)) == 0:
             return HVACMode.OFF
     except Exception:
         pass
 
-    code = zone.get("mode")
-    hvac = API_TO_HVAC_MODE.get(code, None)
-    if hvac in allowed:
-        return hvac
-    # Clamp
-    if HVACMode.HEAT in allowed and HVACMode.COOL not in allowed:
+    # Mapear el código numérico si es válido y permitido
+    try:
+        code = zone.get("mode", None)
+        if code is not None:
+            hvac = API_TO_HVAC_MODE.get(int(code), None)
+            if hvac in allowed_set:
+                return hvac
+    except Exception:
+        pass
+
+    # Clamp por capacidad única
+    if HVACMode.HEAT in allowed_set and HVACMode.COOL not in allowed_set:
         return HVACMode.HEAT
-    if HVACMode.COOL in allowed and HVACMode.HEAT not in allowed:
+    if HVACMode.COOL in allowed_set and HVACMode.HEAT not in allowed_set:
         return HVACMode.COOL
+
+    # Demandas
+    try:
+        if int(zone.get("heat_demand", 0)) and HVACMode.HEAT in allowed_set:
+            return HVACMode.HEAT
+        if int(zone.get("cold_demand", 0)) and HVACMode.COOL in allowed_set:
+            return HVACMode.COOL
+    except Exception:
+        pass
+
     return HVACMode.OFF

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, List, Optional
+from typing import Any
 
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import (
@@ -17,12 +17,16 @@ from homeassistant.config_entries import ConfigEntry
 
 from .const import DOMAIN
 from .coordinator import AirzoneCoordinator
-from .api_modes import allowed_hvac_modes_for_zone, translate_current_mode, HVAC_TO_API_MODE, has_heat_capability, has_cool_capability
+from .api_modes import (
+    allowed_hvac_modes_for_zone,
+    translate_current_mode,
+    HVAC_TO_API_MODE,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add_entities):
-    # Coordinator lookup (2 common storage patterns)
     data = hass.data.get(DOMAIN, {})
     coord: AirzoneCoordinator | None = None
     if isinstance(data, dict):
@@ -30,7 +34,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add_entitie
         if isinstance(coord, dict):
             coord = coord.get("coordinator")
     if not isinstance(coord, AirzoneCoordinator):
-        _LOGGER.warning("AirzoneCoordinator not found in hass.data; creating a default one may fail.")
+        _LOGGER.warning("AirzoneCoordinator not found; aborting climate setup.")
         return
 
     entities: list[AirzoneZoneClimate] = []
@@ -40,6 +44,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add_entitie
         name = z.get("name") or f"Zone {system_id}/{zone_id}"
         entities.append(AirzoneZoneClimate(coord, system_id, zone_id, name))
     add_entities(entities)
+
 
 class AirzoneZoneClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
     _attr_has_entity_name = True
@@ -62,10 +67,8 @@ class AirzoneZoneClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
             model="Local API zone",
         )
 
-    # ---------- Helpers ----------
     def _zone(self) -> dict:
-        z = self.coordinator.get_zone(self._system_id, self._zone_id) or {}
-        return z
+        return self.coordinator.get_zone(self._system_id, self._zone_id) or {}
 
     # ---------- Properties ----------
     @property
@@ -74,8 +77,7 @@ class AirzoneZoneClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        z = self._zone()
-        return z.get("roomTemp")
+        return self._zone().get("roomTemp")
 
     @property
     def target_temperature(self) -> float | None:
@@ -94,26 +96,21 @@ class AirzoneZoneClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
 
     @property
     def target_temperature_step(self) -> float | None:
-        z = self._zone()
-        step = z.get("temp_step")
+        step = self._zone().get("temp_step")
         try:
             if step:
                 return float(step)
         except Exception:
             pass
-        # many Airzone firmwares use 0.5
         return 0.5
 
     @property
     def hvac_modes(self) -> list[HVACMode]:
-        z = self._zone()
-        return allowed_hvac_modes_for_zone(z)
+        return allowed_hvac_modes_for_zone(self._zone())
 
     @property
     def hvac_mode(self) -> HVACMode:
-        z = self._zone()
-        allowed = self.hvac_modes
-        return translate_current_mode(z, allowed)
+        return translate_current_mode(self._zone(), self.hvac_modes)
 
     @property
     def hvac_action(self) -> HVACAction | None:
