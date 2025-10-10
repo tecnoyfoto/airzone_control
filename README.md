@@ -14,7 +14,15 @@ Compared to the official integration, **Airzone Control**:
 
 ---
 
-## ✨ What’s new (v1.4.0)
+## ✨ What’s new (v1.5.0)
+
+- New zone `select` entities: **Mode**, **Speed**, and **IAQ Ventilation**.
+- **Global Mode** selector to change all zones at once.
+- New **Webserver sensors**: cloud status, firmware, type, Wi-Fi quality, and more.
+- Redesigned **Hotel buttons**: power on/off all zones and copy setpoint.
+- All new entities include translations and stable `unique_id`s.
+- Extended and tested support for Local API **v1.76 and v1.77**.
+- General improvements to entity structure, multi-device support, and robustness.
 
 - **Multi-device support:** add **multiple Airzone devices** on the same network (one config entry per device).
 - **mDNS discovery + manual add:** devices show up under *Discovered* when your network allows it; otherwise, add them by IP.
@@ -143,6 +151,14 @@ Issues and PRs are welcome:
 **Repo:** https://github.com/tecnoyfoto/airzone_control
 
 ---
+
+
+---
+
+### 📄 Changelog
+
+See the full release history in [`CHANGELOG.md`](./CHANGELOG.md)
+
 
 ## 📜 License
 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)

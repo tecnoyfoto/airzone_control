@@ -14,7 +14,15 @@ A diferencia de la integración oficial, **Airzone Control**:
 
 ---
 
-## ✨ Novedades (v1.4.0)
+## ✨ Novedades (v1.5.0)
+
+- Nuevos `select` por zona: **Modo**, **Velocidad**, y **Ventilación IAQ**.
+- Selector de **Modo Global** para cambiar todas las zonas a la vez.
+- Nuevos sensores del **Webserver**: conexión nube, firmware, tipo, calidad Wi-Fi y más.
+- **Botones Hotel** rediseñados con soporte completo: encender, apagar, copiar consigna.
+- Todas las nuevas entidades incluyen traducciones y `unique_id` estables.
+- Soporte extendido y probado para la API Local **v1.76 y v1.77**.
+- Mejora general de estructura de entidades, soporte multi-dispositivo y robustez.
 
 - **Multi-dispositivo:** añade **varios Airzone** en la misma red (un *config entry* por equipo).
 - **Autodescubrimiento (mDNS) + alta manual:** si tu red lo permite, verás los equipos en *Descubierto*; si no, añádelos por IP.
@@ -143,6 +151,14 @@ Sugerencias, issues y PRs:
 **Repo:** https://github.com/tecnoyfoto/airzone_control
 
 ---
+
+
+---
+
+### 📄 Historial de cambios
+
+Consulta el historial completo de versiones en [`CHANGELOG.md`](./CHANGELOG.md)
+
 
 ## 📜 Licencia
 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)
