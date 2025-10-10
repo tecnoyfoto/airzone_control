@@ -1,45 +1,63 @@
 from __future__ import annotations
 
+import logging
+from datetime import timedelta
+
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+from .const import DOMAIN, DEFAULT_HOST, DEFAULT_PORT, DEFAULT_SCAN_INTERVAL
 from .coordinator import AirzoneCoordinator
 
-PLATFORMS = ["climate", "select", "sensor", "binary_sensor", "switch"]
+_LOGGER = logging.getLogger(__name__)
+
+# Importante: incluir TODAS las plataformas que tenemos implementadas
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.CLIMATE,     # <- faltaba
+    Platform.SELECT,
+    Platform.SWITCH,      # <- faltaba
+    Platform.BUTTON,      # <- faltaba
+]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    host = entry.data[CONF_HOST]
-    port = entry.data[CONF_PORT]
-    scan = int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
-    api_prefix = entry.data.get("api_prefix")  # puede venir del config_flow
+    """Cargar integración Airzone Control desde una config entry."""
+    host = entry.data.get("host", DEFAULT_HOST)
+    port = entry.data.get("port", DEFAULT_PORT)
+    scan = entry.data.get("scan_interval", DEFAULT_SCAN_INTERVAL)
+    api_prefix = entry.data.get("api_prefix")  # opcional
 
-    coord = AirzoneCoordinator(
+    coordinator = AirzoneCoordinator(
         hass,
         host=host,
         port=port,
         scan_interval=scan,
         api_prefix=api_prefix,
     )
-    # Primer refresco para tener datos antes de crear entidades
-    await coord.async_config_entry_first_refresh()
 
+    # Primer refresco antes de crear entidades
+    await coordinator.async_config_entry_first_refresh()
+
+    # Guardamos el coordinator para que las plataformas lo lean
     hass.data.setdefault(DOMAIN, {})
-    # Guardado en forma dict porque varias plataformas lo esperan así
-    hass.data[DOMAIN][entry.entry_id] = {"coordinator": coord}
+    hass.data[DOMAIN][entry.entry_id] = {
+        "coordinator": coordinator,
+    }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Descargar una config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    stored = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
-    coord: AirzoneCoordinator | None = None
-    if isinstance(stored, dict):
-        coord = stored.get("coordinator")
+    # Cerrar sesión HTTP y limpiar
+    bundle = hass.data.get(DOMAIN, {}).pop(entry.entry_id, {})
+    coord: AirzoneCoordinator | None = bundle.get("coordinator")
     if coord:
         await coord.async_close()
 

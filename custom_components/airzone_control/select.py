@@ -12,24 +12,10 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import AirzoneCoordinator
+from . import i18n
 
 _LOGGER = logging.getLogger(__name__)
 
-# Tabla canónica (Local API)
-# 0/1=Apagado, 2=Frío, 3=Calor, 4=Ventilación, 5=Seco, 7=Auto
-MODE_NAME_BY_CODE: Dict[int, str] = {
-    0: "Apagado",
-    1: "Apagado",
-    2: "Frío",
-    3: "Calor",
-    4: "Ventilación",
-    5: "Seco",
-    7: "Auto",
-}
-MODE_CODE_BY_NAME: Dict[str, int] = {v: k for k, v in MODE_NAME_BY_CODE.items()}
-
-
-# =========================== SETUP ===========================
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities
@@ -41,164 +27,183 @@ async def async_setup_entry(
         if isinstance(bundle, dict):
             coord = bundle.get("coordinator")
     if not isinstance(coord, AirzoneCoordinator):
+        # compat legacy
+        if isinstance(data, AirzoneCoordinator):
+            coord = data
+    if not isinstance(coord, AirzoneCoordinator):
         _LOGGER.warning("AirzoneCoordinator not found; aborting select setup.")
         return
 
     entities: List[SelectEntity] = []
 
-    # --- Select de MODO GLOBAL por SISTEMA ---
+    # MODO GLOBAL por SISTEMA
     system_ids = sorted({sid for (sid, _zid) in (coord.data or {}).keys()})
     for sid in system_ids:
         entities.append(GlobalModeSelect(coord, sid))
 
-    # --- Select de MODO por ZONA ---
+    # MODO y VELOCIDAD por ZONA
     for (sid, zid), z in (coord.data or {}).items():
         entities.append(ZoneModeSelect(coord, sid, zid))
+        try:
+            has_speed_values = isinstance(z.get("speed_values"), list) and len(z.get("speed_values")) > 0
+            has_speeds = int(z.get("speeds", 0) or 0) > 0
+            has_speed_field = "speed" in z
+            if has_speed_values or has_speeds or has_speed_field:
+                entities.append(ZoneFanSpeedSelect(coord, sid, zid))
+        except Exception:
+            pass
+
+    # IAQ: Modo de ventilación
+    if isinstance(getattr(coord, "iaqs", None), dict):
+        for (sid, iid), _iaq in coord.iaqs.items():
+            entities.append(IAQVentModeSelect(coord, sid, iid))
 
     async_add_entities(entities)
 
 
-# ======================= SELECT: ZONA ========================
+# ======================= SELECT: ZONA (MODO) ========================
 
 class ZoneModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
     """Selector 'Modo' por zona (aplica solo a esa zona)."""
 
     _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_translation_key = "mode"
 
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int, zone_id: int) -> None:
         super().__init__(coordinator)
         self._sid = int(system_id)
         self._zid = int(zone_id)
-        z = coordinator.get_zone(system_id, zone_id) or {}
-        name = z.get("name") or f"Zona {self._sid}/{self._zid}"
-        self._attr_name = "Modo"
         self._attr_unique_id = f"{DOMAIN}_zone_{self._sid}_{self._zid}_mode"
-        self._device_name = name  # solo para device_info
+        z = coordinator.get_zone(system_id, zone_id) or {}
+        self._device_name = z.get("name") or f"Zona {self._sid}/{self._zid}"
 
     # ---- helpers ----
     def _zone(self) -> dict:
         return self.coordinator.get_zone(self._sid, self._zid) or {}
 
     def _zone_modes_codes(self) -> List[int]:
-        """Modos enumerados por la API para esta zona (o heredados del sistema)."""
+        """Modos enumerados para esta zona."""
         z = self._zone()
-        # 1) modos de la zona
         zm = z.get("modes")
+        codes: List[int] = []
         if isinstance(zm, list) and zm:
             try:
-                return [int(x) for x in zm if int(x) in MODE_NAME_BY_CODE]
+                codes = [int(x) for x in zm]
             except Exception:
-                pass
-        # 2) modos de sistema inyectados por el coordinator
-        sm = z.get("sys_modes")
-        if isinstance(sm, list) and sm:
+                codes = []
+        if not codes:
             try:
-                return [int(x) for x in sm if int(x) in MODE_NAME_BY_CODE]
+                cur = int(z.get("mode"))
+                if cur:
+                    codes = [cur]
             except Exception:
                 pass
-        # 3) fallback: solo el modo actual (si existe)
-        try:
-            cur = int(z.get("mode"))
-            return [cur] if cur in MODE_NAME_BY_CODE else []
-        except Exception:
-            return []
+        known = [c for c in [2, 3, 4, 5, 7] if c in codes] or [2, 3, 4, 5, 7]
+        return known
 
-    # ---- SelectEntity ----
+    # -------- SelectEntity --------
     @property
     def available(self) -> bool:
         return bool(self._zone())
 
     @property
     def device_info(self) -> DeviceInfo:
+        z = self._zone()
+        name = z.get("name") or f"Zona {self._sid}/{self._zid}"
         return DeviceInfo(
             identifiers={(DOMAIN, f"{self._sid}-{self._zid}")},
-            name=self._device_name,
+            name=name,
             manufacturer="Airzone",
             model="Local API zone",
         )
 
     @property
     def options(self) -> List[str]:
-        codes = self._zone_modes_codes()
-        # "Apagado" siempre visible
-        names = [MODE_NAME_BY_CODE.get(c) for c in codes if c in MODE_NAME_BY_CODE and c not in (0, 1)]
-        out = ["Apagado"]
-        out.extend([n for n in names if n and n not in out])
+        off = i18n.label(self.coordinator.hass, "off")
+        names = [i18n.mode_name(self.coordinator.hass, c) for c in self._zone_modes_codes()]
+        names = [n for n in names if n and n != off]
+        out = [off]
+        for n in names:
+            if n not in out:
+                out.append(n)
         return out
 
     @property
     def current_option(self) -> Optional[str]:
         z = self._zone()
         try:
-            if int(z.get("on", 1)) == 0:
-                return "Apagado"
+            if int(z.get("on", 0)) == 0:
+                return i18n.label(self.coordinator.hass, "off")
         except Exception:
             pass
         try:
-            code = int(z.get("mode"))
-            return MODE_NAME_BY_CODE.get(code)
+            return i18n.mode_name(self.coordinator.hass, int(z.get("mode")))
         except Exception:
             return None
 
     async def async_select_option(self, option: str) -> None:
         option = str(option or "").strip()
         if option not in self.options:
-            _LOGGER.debug("Opción '%s' no válida para zona %s/%s; opciones: %s",
-                          option, self._sid, self._zid, self.options)
+            _LOGGER.debug(
+                "Opción '%s' no válida para zona %s/%s; opciones: %s",
+                option, self._sid, self._zid, self.options
+            )
             return
-        if option == "Apagado":
+        if option == i18n.label(self.coordinator.hass, "off"):
             await self.coordinator.async_set_zone_params(self._sid, self._zid, on=0)
             return
 
-        code = MODE_CODE_BY_NAME.get(option)
-        if code in (None, 0, 1):
-            return
-        await self.coordinator.async_set_zone_params(self._sid, self._zid, on=1, mode=int(code))
+        # buscar código del nombre
+        for code in [2, 3, 4, 5, 7]:
+            if i18n.mode_name(self.coordinator.hass, code) == option:
+                await self.coordinator.async_set_zone_params(self._sid, self._zid, on=1, mode=int(code))
+                return
 
-    # Mantener UI al día
     def _handle_coordinator_update(self) -> None:
         self.async_write_ha_state()
 
 
-# ====================== SELECT: GLOBAL =======================
+# ======================= SELECT: SISTEMA (MODO GLOBAL) ========================
 
 class GlobalModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
-    """Selector 'Modo global' por sistema. Aplica el modo a TODAS las zonas."""
+    """Selector 'Modo' global por sistema (aplica a todas las zonas)."""
 
     _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_translation_key = "mode_global"
 
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
         super().__init__(coordinator)
         self._sid = int(system_id)
-        self._attr_name = "Modo global"
-        self._attr_unique_id = f"{DOMAIN}_system_{self._sid}_global_mode"
+        self._attr_unique_id = f"{DOMAIN}_system_{self._sid}_mode_global"
 
-    # -------- helpers --------
+    # --- helpers ---
     def _zones(self) -> List[dict]:
         return self.coordinator.zones_of_system(self._sid)
 
     def _sys_modes_codes(self) -> List[int]:
-        """Prioriza `modes` de sistema; si no existen, une los de las zonas."""
-        sysd = self.coordinator.get_system(self._sid) or {}
-        modes = sysd.get("modes")
-        if isinstance(modes, list) and modes:
-            try:
-                return [int(x) for x in modes if int(x) in MODE_NAME_BY_CODE]
-            except Exception:
-                pass
-
+        zones = self._zones()
+        if not zones:
+            return [2, 3, 4, 5, 7]
         codes: List[int] = []
-        for z in self._zones():
+        for z in zones:
             zm = z.get("modes")
-            if isinstance(zm, list):
-                for x in zm:
-                    try:
-                        xi = int(x)
-                        if xi in MODE_NAME_BY_CODE and xi not in codes:
-                            codes.append(xi)
-                    except Exception:
-                        continue
-        return codes
+            if isinstance(zm, list) and zm:
+                try:
+                    codes.extend([int(x) for x in zm])
+                except Exception:
+                    continue
+            else:
+                try:
+                    codes.append(int(z.get("mode")))
+                except Exception:
+                    continue
+        out = []
+        for c in [2, 3, 4, 5, 7]:
+            if c in codes and c not in out:
+                out.append(c)
+        return out or [2, 3, 4, 5, 7]
 
     # -------- SelectEntity --------
     @property
@@ -216,65 +221,59 @@ class GlobalModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
 
     @property
     def options(self) -> List[str]:
-        codes = self._sys_modes_codes()
-        names = [MODE_NAME_BY_CODE.get(c) for c in codes if c in MODE_NAME_BY_CODE and c not in (0, 1)]
-        out = ["Apagado"]
-        out.extend([n for n in names if n and n not in out])
+        off = i18n.label(self.coordinator.hass, "off")
+        names = [i18n.mode_name(self.coordinator.hass, c) for c in self._sys_modes_codes()]
+        names = [n for n in names if n and n != off]
+        out = [off]
+        for n in names:
+            if n not in out:
+                out.append(n)
         return out
 
     @property
     def current_option(self) -> Optional[str]:
         zones = self._zones()
-        if not zones:
-            return None
-
         try:
-            ons = [int(z.get("on", 0)) for z in zones]
+            if zones and all(int(z.get("on", 0)) == 0 for z in zones):
+                return i18n.label(self.coordinator.hass, "off")
         except Exception:
-            ons = [1 for _ in zones]
-
-        if all(v == 0 for v in ons):
-            return "Apagado"
-
-        mode_set = set()
-        for z in zones:
-            try:
-                if int(z.get("on", 0)) == 0:
-                    continue
-                m = int(z.get("mode"))
-                mode_set.add(m)
-            except Exception:
-                pass
-
-        if len(mode_set) == 1:
-            code = next(iter(mode_set))
-            return MODE_NAME_BY_CODE.get(code)
-        return None  # mixto
+            pass
+        try:
+            modes = [int(z.get("mode")) for z in zones if int(z.get("on", 0)) == 1]
+            for cand in [2, 3, 4, 5, 7]:
+                if cand in modes:
+                    return i18n.mode_name(self.coordinator.hass, cand)
+        except Exception:
+            pass
+        return None
 
     async def async_select_option(self, option: str) -> None:
         option = str(option or "").strip()
         if option not in self.options:
-            _LOGGER.debug("Opción '%s' no válida para sistema %s; opciones: %s", option, self._sid, self.options)
-            return
-
-        zones = self._zones()
-        if not zones:
+            _LOGGER.debug(
+                "Opción '%s' no válida para sistema %s; opciones: %s",
+                option, self._sid, self.options
+            )
             return
 
         tasks: List[asyncio.Task] = []
-        if option == "Apagado":
-            for z in zones:
+        if option == i18n.label(self.coordinator.hass, "off"):
+            for z in self._zones():
                 try:
                     sid = int(z.get("systemID"))
                     zid = int(z.get("zoneID"))
                     tasks.append(asyncio.create_task(self.coordinator.async_set_zone_params(sid, zid, on=0)))
-                except Exception as e:
-                    _LOGGER.debug("No se pudo programar apagado de zona %s: %s", z, e)
+                except Exception:
+                    continue
         else:
-            code = MODE_CODE_BY_NAME.get(option)
-            if code in (0, 1, None):
+            code: Optional[int] = None
+            for cand in [2, 3, 4, 5, 7]:
+                if i18n.mode_name(self.coordinator.hass, cand) == option:
+                    code = cand
+                    break
+            if code is None:
                 return
-            for z in zones:
+            for z in self._zones():
                 try:
                     sid = int(z.get("systemID"))
                     zid = int(z.get("zoneID"))
@@ -284,9 +283,186 @@ class GlobalModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
                     _LOGGER.debug("No se pudo programar cambio de modo en zona %s: %s", z, e)
 
         if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for r in results:
-                if isinstance(r, Exception):
-                    _LOGGER.warning("Error aplicando modo global en alguna zona: %s", r)
+            await asyncio.gather(*tasks, return_exceptions=True)
 
+    def _handle_coordinator_update(self) -> None:
+        self.async_write_ha_state()
+
+
+# ======================= SELECT: ZONA (VELOCIDAD) ========================
+
+class ZoneFanSpeedSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
+    """Selector de **velocidad** del ventilador por zona."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_translation_key = "speed"
+
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, zone_id: int) -> None:
+        super().__init__(coordinator)
+        self._sid = int(system_id)
+        self._zid = int(zone_id)
+        self._attr_unique_id = f"{DOMAIN}_zone_{self._sid}_{self._zid}_speed"
+        z = coordinator.get_zone(system_id, zone_id) or {}
+        self._device_name = z.get("name") or f"Zona {self._sid}/{self._zid}"
+
+    # ---- helpers ----
+    def _zone(self) -> dict:
+        return self.coordinator.get_zone(self._sid, self._zid) or {}
+
+    def _speed_values(self) -> List[int]:
+        z = self._zone()
+        sv = z.get("speed_values")
+        if isinstance(sv, list) and sv:
+            out: List[int] = []
+            for x in sv:
+                try:
+                    v = int(x)
+                    if v not in out:
+                        out.append(v)
+                except Exception:
+                    continue
+            return sorted(out)
+        try:
+            n = int(z.get("speeds", 0) or 0)
+        except Exception:
+            n = 0
+        vals: List[int] = []
+        if n > 0:
+            cur = None
+            try:
+                cur = int(z.get("speed"))
+            except Exception:
+                pass
+            include_auto = (cur == 0) or ("speed_type" in z)
+            start = 0 if include_auto else 1
+            vals = list(range(start, n + 1))
+        if not vals and "speed" in z:
+            try:
+                vals = [int(z.get("speed"))]
+            except Exception:
+                vals = []
+        return vals
+
+    def _label_for(self, value: int) -> str:
+        values = self._speed_values()
+        max_level = max([v for v in values if v != 0], default=None)
+        return i18n.speed_label(self.coordinator.hass, value, max_level, values)
+
+    def _rev_map(self) -> Dict[str, int]:
+        return {self._label_for(v): v for v in self._speed_values()}
+
+    # -------- SelectEntity --------
+    @property
+    def available(self) -> bool:
+        try:
+            return bool(self._speed_values())
+        except Exception:
+            return False
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        z = self._zone()
+        name = z.get("name") or f"Zona {self._sid}/{self._zid}"
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"{self._sid}-{self._zid}")},
+            name=name,
+            manufacturer="Airzone",
+            model="Local API zone",
+        )
+
+    @property
+    def options(self) -> List[str]:
+        return [self._label_for(v) for v in self._speed_values()]
+
+    @property
+    def current_option(self) -> Optional[str]:
+        z = self._zone()
+        try:
+            cur = int(z.get("speed"))
+            return self._label_for(cur)
+        except Exception:
+            return None
+
+    async def async_select_option(self, option: str) -> None:
+        option = str(option or "").strip()
+        rev = self._rev_map()
+        if option not in rev:
+            _LOGGER.debug(
+                "Opción de velocidad no válida zona %s/%s: %s (opciones: %s)",
+                self._sid, self._zid, option, list(rev)
+            )
+            return
+        value = int(rev[option])
+        await self.coordinator.async_set_zone_params(self._sid, self._zid, on=1, speed=value)
+
+    def _handle_coordinator_update(self) -> None:
+        self.async_write_ha_state()
+
+
+# ======================= SELECT: IAQ (MODO VENTILACIÓN) ========================
+
+class IAQVentModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
+    """Selector del 'modo de ventilación' de la sonda IAQ (iaq_mode_vent)."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_translation_key = "ventilation"
+
+    _VENT_CODES = [0, 1, 2]  # 0=Off, 1=Manual, 2=Auto
+
+    def __init__(self, coordinator: AirzoneCoordinator, system_id: int, iaq_id: int) -> None:
+        super().__init__(coordinator)
+        self._sid = int(system_id)
+        self._iid = int(iaq_id)
+        self._attr_unique_id = f"{DOMAIN}_iaq_{self._sid}_{self._iid}_ventilation"
+        iaq = coordinator.get_iaq(system_id, iaq_id) or {}
+        self._device_name = iaq.get("name") or f"IAQ {self._sid}/{self._iid}"
+
+    # Helpers
+    def _iaq(self) -> dict:
+        return self.coordinator.get_iaq(self._sid, self._iid) or {}
+
+    # SelectEntity
+    @property
+    def available(self) -> bool:
+        d = self._iaq()
+        return "iaq_mode_vent" in d
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        iaq = self._iaq()
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"iaq-{self._sid}-{self._iid}")},
+            name=iaq.get("name") or f"IAQ {self._sid}/{self._iid}",
+            manufacturer="Airzone",
+            model="IAQ Sensor",
+        )
+
+    @property
+    def options(self) -> List[str]:
+        return [i18n.iaq_vent_label(self.coordinator.hass, c) for c in self._VENT_CODES]
+
+    @property
+    def current_option(self) -> Optional[str]:
+        iaq = self._iaq()
+        try:
+            code = int(iaq.get("iaq_mode_vent"))
+            return i18n.iaq_vent_label(self.coordinator.hass, code)
+        except Exception:
+            return None
+
+    async def async_select_option(self, option: str) -> None:
+        option = str(option or "").strip()
+        code = None
+        for cand in self._VENT_CODES:
+            if i18n.iaq_vent_label(self.coordinator.hass, cand) == option:
+                code = cand
+                break
+        if code is None:
+            _LOGGER.debug("Opción de ventilación IAQ no válida: %s", option)
+            return
+        await self.coordinator.async_set_iaq_params(self._sid, self._iid, iaq_mode_vent=int(code))
+
+    def _handle_coordinator_update(self) -> None:
         self.async_write_ha_state()

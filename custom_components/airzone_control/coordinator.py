@@ -14,10 +14,11 @@ from .const import DOMAIN, DEFAULT_HOST, DEFAULT_PORT, DEFAULT_SCAN_INTERVAL
 _LOGGER = logging.getLogger(__name__)
 
 # Prefijos candidatos vistos en firmwares reales
-CANDIDATE_PREFIXES: list[str] = ["", "/api/v1", "/airzone/local/api/v1", "/lapi/v1"]
+CANDIDATE_PREFIXES: list[str] = ["", "/api/v1"]
 
+class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
+    """Coordinador de datos para Airzone Local API (1.76+ → 1.78)."""
 
-class AirzoneCoordinator(DataUpdateCoordinator[Dict[Tuple[int, int], dict]]):
     def __init__(
         self,
         hass: HomeAssistant,
@@ -26,9 +27,11 @@ class AirzoneCoordinator(DataUpdateCoordinator[Dict[Tuple[int, int], dict]]):
         scan_interval: int = DEFAULT_SCAN_INTERVAL,
         api_prefix: str | None = None,
     ) -> None:
-        self._host = host
+        self._host = host.strip()
         self._port = int(port or DEFAULT_PORT)
+        self._https_port = 3443
         self._prefix: str | None = api_prefix  # puede venir del config_flow
+        self._prefer_https: Optional[bool] = None  # autodetección en runtime
 
         super().__init__(
             hass,
@@ -50,14 +53,20 @@ class AirzoneCoordinator(DataUpdateCoordinator[Dict[Tuple[int, int], dict]]):
         # Diagnóstico
         self.transport_hvac: str | None = None
         self.transport_iaq: str | None = None
-        self.version: str = "desconocida"
+        self.transport_scheme: str | None = None  # "http" o "https"
 
-        # --- NUEVO: “modo hotel / seguir global” por sistema ---
+        # Control "seguir global"
         self._follow_master_enabled: set[int] = set()
 
-    # ---------------- base url / sesión ----------------
-    def _base(self) -> str:
+        # API version y WS info
+        self.version: str | None = None
+
+    # ---------------- bases URL / sesión ----------------
+    def _http_base(self) -> str:
         return f"http://{self._host}:{self._port}{(self._prefix or '')}"
+
+    def _https_base(self) -> str:
+        return f"https://{self._host}:{self._https_port}{(self._prefix or '')}"
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
         if self._session and not self._session.closed:
@@ -66,110 +75,173 @@ class AirzoneCoordinator(DataUpdateCoordinator[Dict[Tuple[int, int], dict]]):
         return self._session
 
     async def _detect_prefix(self) -> None:
+        """Detecta prefijo ('', '/api/v1') probando primero el esquema preferido y, si falla, el alternativo."""
         if self._prefix is not None:
             return
         timeout = 6
         s = await self._ensure_session()
-        for pref in CANDIDATE_PREFIXES:
-            base = f"http://{self._host}:{self._port}{pref}"
-            try:
-                async with s.get(f"{base}/webserver", timeout=timeout) as r:
-                    if r.status == 200:
-                        self._prefix = pref
-                        _LOGGER.debug("Detected API prefix via GET /webserver: %s", pref)
-                        return
-            except Exception:
-                pass
-            try:
-                async with s.post(f"{base}/webserver", json={}, timeout=timeout) as r:
-                    if r.status == 200:
-                        self._prefix = pref
-                        _LOGGER.debug("Detected API prefix via POST /webserver: %s", pref)
-                        return
-            except Exception:
-                pass
-            try:
-                async with s.get(f"{base}/hvac", params={"systemid": 0, "zoneid": 0}, timeout=timeout) as r:
-                    if r.status == 200:
-                        self._prefix = pref
-                        _LOGGER.debug("Detected API prefix via GET /hvac: %s", pref)
-                        return
-            except Exception:
-                pass
-            try:
-                async with s.post(f"{base}/hvac", json={"systemID": 0, "zoneID": 0}, timeout=timeout) as r:
-                    if r.status == 200:
-                        self._prefix = pref
-                        _LOGGER.debug("Detected API prefix via POST /hvac: %s", pref)
-                        return
-            except Exception:
-                pass
-        self._prefix = ""  # última oportunidad
 
-    # ---------------- HTTP helpers ----------------
-    async def _get_json(self, path: str, params: dict | None = None) -> dict | list | None:
+        # Orden de prueba: si ya se decidió https/http, respetarlo; si no, http primero.
+        schemes = ["https", "http"] if self._prefer_https else ["http", "https"]
+
+        for scheme in schemes:
+            for pref in CANDIDATE_PREFIXES:
+                base = (self._https_base() if scheme == "https" else self._http_base()).replace((self._prefix or ""), pref)
+                try:
+                    async with s.get(f"{base}/webserver", timeout=timeout, ssl=(False if scheme == "https" else None)) as r:
+                        if r.status == 200:
+                            self._prefix = pref
+                            self._prefer_https = (scheme == "https")
+                            self.transport_scheme = scheme
+                            _LOGGER.debug("Detected API prefix via GET /webserver: %s (scheme=%s)", pref, scheme)
+                            return
+                except Exception:
+                    pass
+                try:
+                    async with s.post(f"{base}/webserver", json={}, timeout=timeout, ssl=(False if scheme == "https" else None)) as r:
+                        if r.status == 200:
+                            self._prefix = pref
+                            self._prefer_https = (scheme == "https")
+                            self.transport_scheme = scheme
+                            _LOGGER.debug("Detected API prefix via POST /webserver: %s (scheme=%s)", pref, scheme)
+                            return
+                except Exception:
+                    pass
+        # Si no detecta, deja _prefix tal cual (None) y que fallen las llamadas con logs útiles.
+
+    # ---------------- helpers HTTP genéricos (GET/POST con HTTPS fallback) ----------------
+    async def _request_json(
+        self, method: str, path: str, *, params: dict | None = None, body: dict | None = None, timeout: int = 8
+    ) -> dict | list | None:
+        """
+        Intenta la llamada en orden preferido (http/https) y hace fallback al alternativo.
+        En https no verifica certificado (self-signed de LAPI 1.78).
+        """
+        await self._detect_prefix()
         s = await self._ensure_session()
-        url = f"{self._base()}{path}"
-        async with s.get(url, params=params, timeout=6) as resp:
-            txt = await resp.text()
-            if resp.status != 200:
-                _LOGGER.debug("GET %s %s -> %s %s", path, params, resp.status, txt)
-                return None
+
+        # Construir candidatos en orden
+        order = ["https", "http"] if self._prefer_https else ["http", "https"]
+        bases = []
+        for scheme in order:
+            base = self._https_base() if scheme == "https" else self._http_base()
+            ssl_opt = (False if scheme == "https" else None)
+            bases.append((scheme, base, ssl_opt))
+
+        last_txt = ""
+        last_status = None
+        for scheme, base, ssl_opt in bases:
+            url = f"{base}{path}"
             try:
-                return await resp.json(content_type=None)
-            except Exception:
-                return {"raw": txt}
+                if method == "GET":
+                    async with s.get(url, params=params, timeout=timeout, ssl=ssl_opt) as resp:
+                        txt = await resp.text()
+                        if resp.status != 200:
+                            _LOGGER.debug("%s %s %s -> %s %s", method, path, params, resp.status, txt)
+                            last_status, last_txt = resp.status, txt
+                            continue
+                        try:
+                            data = await resp.json(content_type=None)
+                        except Exception:
+                            data = {"raw": txt}
+                else:
+                    async with s.request(method, url, json=(body or {}), timeout=timeout, ssl=ssl_opt) as resp:
+                        txt = await resp.text()
+                        if resp.status != 200:
+                            _LOGGER.debug("%s %s %s -> %s %s", method, path, body, resp.status, txt)
+                            last_status, last_txt = resp.status, txt
+                            continue
+                        try:
+                            data = await resp.json(content_type=None)
+                        except Exception:
+                            data = {"raw": txt}
+
+                # éxito
+                self._prefer_https = (scheme == "https")
+                self.transport_scheme = scheme
+                return data
+            except Exception as e:
+                last_txt = str(e)
+                continue
+
+        if last_status:
+            _LOGGER.debug("%s %s final error -> %s %s", method, path, last_status, last_txt)
+        return None
+
+    async def _get_json(self, path: str, params: dict | None = None) -> dict | list | None:
+        return await self._request_json("GET", path, params=params)
 
     async def _post_json(self, path: str, body: dict) -> dict | list | None:
-        s = await self._ensure_session()
-        url = f"{self._base()}{path}"
-        async with s.post(url, json=body, timeout=6) as resp:
-            txt = await resp.text()
-            if resp.status != 200:
-                _LOGGER.debug("POST %s %s -> %s %s", path, body, resp.status, txt)
-                return None
-            try:
-                return await resp.json(content_type=None)
-            except Exception:
-                return {"raw": txt}
+        return await self._request_json("POST", path, body=body)
 
     # ---------------- Normalizadores ----------------
+
+    @staticmethod
+    def _normalize_zone(z: dict) -> dict:
+        out = dict(z)
+
+        # Unificar ventana abierta: open_window (1.78) | window_external_source (≤1.77)
+        val = None
+        if "open_window" in out:
+            try:
+                val = int(out.get("open_window")) or 0
+            except Exception:
+                val = 0
+        elif "window_external_source" in out:
+            try:
+                val = int(out.get("window_external_source")) or 0
+            except Exception:
+                val = 0
+        if val is not None:
+            out["open_window"] = val
+            out["window_external_source"] = val
+
+        # Tipos numéricos más usados
+        for key in ("systemID", "zoneID", "on", "mode", "speed", "speeds",
+                    "heatStage", "coldStage", "heatStages", "coldStages", "units",
+                    "master_zoneID", "sleep", "double_sp"):
+            if key in out:
+                try:
+                    out[key] = int(out[key])
+                except Exception:
+                    pass
+
+        # speed_values como lista de int única y ordenada
+        if isinstance(out.get("speed_values"), list):
+            try:
+                sv = sorted({int(x) for x in out["speed_values"]})
+                out["speed_values"] = sv
+            except Exception:
+                pass
+
+        return out
 
     @staticmethod
     def _extract_zone_list(payload: Any) -> list[dict]:
         if not isinstance(payload, dict):
             return []
-        if isinstance(payload.get("data"), list):
-            return [x for x in payload["data"] if isinstance(x, dict) and "systemID" in x and "zoneID" in x]
-        if isinstance(payload.get("systems"), list):
+        data = payload.get("data")
+        if isinstance(data, dict):
+            data = [data]
+        if isinstance(data, list):
             out: list[dict] = []
-            for s in payload["systems"]:
-                d = s.get("data")
-                if isinstance(d, list):
-                    out.extend([x for x in d if isinstance(x, dict) and "systemID" in x and "zoneID" in x])
+            for x in data:
+                if isinstance(x, dict):
+                    out.append(AirzoneCoordinator._normalize_zone(x))
             return out
-        return []
-
-    @staticmethod
-    def _extract_system_data(payload: Any, system_id: int) -> dict | None:
-        if not isinstance(payload, dict):
-            return None
-        d = payload.get("data")
-        if isinstance(d, dict):
-            return d
-        if isinstance(d, list):
-            for item in d:
-                if isinstance(item, dict) and int(item.get("systemID", -1)) == system_id:
-                    di = item.get("data")
-                    return di if isinstance(di, dict) else item
-        if isinstance(payload.get("systems"), list):
-            for s in payload["systems"]:
-                if int(s.get("systemID", -1)) == system_id:
-                    di = s.get("data")
-                    return di if isinstance(di, dict) else s
-        if any(k in payload for k in ("ext_temp", "temp_return", "work_temp", "num_airqsensor")):
-            return payload
-        return None
+        # formato por sistemas
+        systems = payload.get("systems")
+        items: list[dict] = []
+        if isinstance(systems, list):
+            for s in systems:
+                dl = s.get("data")
+                if isinstance(dl, list):
+                    for x in dl:
+                        if isinstance(x, dict):
+                            items.append(AirzoneCoordinator._normalize_zone(x))
+                elif isinstance(dl, dict):
+                    items.append(AirzoneCoordinator._normalize_zone(dl))
+        return items
 
     @staticmethod
     def _extract_iaq_list(payload: Any) -> list[dict]:
@@ -180,6 +252,13 @@ class AirzoneCoordinator(DataUpdateCoordinator[Dict[Tuple[int, int], dict]]):
                 return None
             if "airqsensorID" in x and "iaqsensorID" not in x:
                 x["iaqsensorID"] = x.pop("airqsensorID")
+            # normalizar enteros comunes
+            for k in ("systemID", "iaqsensorID", "iaq_mode_vent"):
+                if k in x:
+                    try:
+                        x[k] = int(x[k])
+                    except Exception:
+                        pass
             return x
 
         if isinstance(payload, dict):
@@ -188,9 +267,8 @@ class AirzoneCoordinator(DataUpdateCoordinator[Dict[Tuple[int, int], dict]]):
                 for x in d:
                     n = _norm(x);  n and items.append(n)
             elif isinstance(d, dict):
-                n = _norm(d);   n and items.append(n)
-
-            if isinstance(payload.get("systems"), list):
+                n = _norm(d); n and items.append(n)
+            elif "systems" in payload and isinstance(payload["systems"], list):
                 for s in payload["systems"]:
                     dl = s.get("data")
                     if isinstance(dl, list):
@@ -232,54 +310,56 @@ class AirzoneCoordinator(DataUpdateCoordinator[Dict[Tuple[int, int], dict]]):
             profile = "Zona setpoint único (+slats)"
         elif "setpoint" in caps:
             profile = "Zona setpoint único"
+        elif "modes" in caps:
+            profile = "Zona con modos"
         else:
-            profile = "Zona genérica"
+            profile = "Zona básica"
 
-        return {"profile": profile, "capabilities": caps}
+        return {
+            "profile": profile,
+            "capabilities": caps,
+        }
 
-    def _determine_system_profile(self, sid: int) -> dict:
-        sysd = self.systems.get(sid, {}) or {}
+    def _determine_system_profile(self, system_id: int) -> dict:
+        zones = self.zones_of_system(system_id)
         caps: list[str] = []
-        for k in ("ext_temp", "temp_return", "work_temp"):
-            if k in sysd:
-                caps.append(k)
+        if any("humidity" in (self._determine_zone_profile(z).get("capabilities") or []) for z in zones):
+            caps.append("humidity")
+        return {
+            "profile": "Sistema",
+            "capabilities": caps,
+        }
 
-        if any(k[0] == sid for k in self.iaqs.keys()) or (sid in self.iaq_fallback):
-            caps.append("iaq")
+    # ---------------- Mapa de datos ----------------
 
-        has_double = any(
-            "double_sp" in (self.zone_profiles.get((sid, zid), {}).get("capabilities") or [])
-            for (s, zid) in self.zone_profiles.keys()
-            if s == sid
-        )
+    @staticmethod
+    def _map_zones(zlist: list[dict]) -> dict[tuple[int,int], dict]:
+        out: dict[tuple[int,int], dict] = {}
+        for z in zlist:
+            try:
+                sid = int(z.get("systemID"))
+                zid = int(z.get("zoneID"))
+                out[(sid, zid)] = z
+            except Exception:
+                continue
+        return out
 
-        if any(k in caps for k in ("ext_temp","temp_return","work_temp")):
-            profile = "Air to Water (A2W)"
-        else:
-            profile = "Sistema HVAC (doble setpoint)" if has_double else "Sistema HVAC"
-
-        return {"profile": profile, "capabilities": caps}
-
-    # ---------------- Helpers públicos ----------------
+    # ---------------- API públicas de lectura ----------------
 
     def zones_of_system(self, system_id: int) -> list[dict]:
-        return [z for (sid, _), z in (self.data or {}).items() if sid == int(system_id)]
+        return [z for (sid, _zid), z in (self.data or {}).items() if sid == int(system_id)]
 
     def get_zone(self, system_id: int, zone_id: int) -> dict | None:
         return (self.data or {}).get((int(system_id), int(zone_id)))
 
-    def get_system(self, system_id: int) -> dict | None:
-        return self.systems.get(int(system_id))
-
     def get_iaq(self, system_id: int, iaq_id: int) -> dict | None:
         return self.iaqs.get((int(system_id), int(iaq_id)))
 
-    # --- NUEVO: determinar zona máster de un sistema ---
+    # --- Zona máster (heurística) ---
     def master_zone_id(self, system_id: int) -> Optional[int]:
         zones = self.zones_of_system(system_id)
         if not zones:
             return None
-        # Pistas explícitas
         for z in zones:
             for key in ("master", "is_master", "zone_master"):
                 try:
@@ -293,13 +373,12 @@ class AirzoneCoordinator(DataUpdateCoordinator[Dict[Tuple[int, int], dict]]):
                     return int(z.get("zoneID"))
                 except Exception:
                     pass
-        # Fallback: la de menor zoneID
         try:
             return min(int(z.get("zoneID")) for z in zones if "zoneID" in z)
         except Exception:
             return None
 
-    # --- NUEVO: API “seguir global” ---
+    # --- Seguir modo máster ---
     def is_follow_master_enabled(self, system_id: int) -> bool:
         return int(system_id) in self._follow_master_enabled
 
@@ -307,13 +386,11 @@ class AirzoneCoordinator(DataUpdateCoordinator[Dict[Tuple[int, int], dict]]):
         sid = int(system_id)
         if enabled:
             self._follow_master_enabled.add(sid)
-            # Enforzar inmediatamente una pasada
             self.hass.async_create_task(self._enforce_follow_master(sid))
         else:
             self._follow_master_enabled.discard(sid)
 
     async def _enforce_follow_master(self, system_id: int) -> None:
-        """Hace que todas las zonas copien on/mode de la zona máster. No bloquea el bucle principal."""
         sid = int(system_id)
         if sid not in self._follow_master_enabled:
             return
@@ -326,65 +403,72 @@ class AirzoneCoordinator(DataUpdateCoordinator[Dict[Tuple[int, int], dict]]):
             desired_on = int(mz.get("on", 0))
         except Exception:
             desired_on = 0
-        # El modo solo lo aplicamos si está definido y es entero
-        desired_mode: Optional[int] = None
+        desired_mode = None
         try:
-            m = int(mz.get("mode"))
-            desired_mode = m
+            desired_mode = int(mz.get("mode"))
         except Exception:
-            desired_mode = None
+            pass
 
-        tasks: List[asyncio.Task] = []
-        for z in self.zones_of_system(sid):
-            try:
-                zid = int(z.get("zoneID"))
-            except Exception:
+        tasks: list[asyncio.Task] = []
+        for (s, zid), z in (self.data or {}).items():
+            if s != sid:
                 continue
             if zid == mzid:
                 continue
-            # Comparar y ajustar 'on'
             try:
                 cur_on = int(z.get("on", 0))
             except Exception:
                 cur_on = 0
             if cur_on != desired_on:
                 tasks.append(asyncio.create_task(self.async_set_zone_params(sid, zid, on=desired_on)))
-                continue  # ya habrá otro refresh; el modo lo aplicamos en la siguiente pasada
-
-            # Si está encendido y tenemos modo deseado, y difiere -> ponerlo
+                continue
             if desired_on == 1 and desired_mode is not None:
                 try:
                     cur_mode = int(z.get("mode"))
+                    if cur_mode != desired_mode:
+                        tasks.append(asyncio.create_task(self.async_set_zone_params(sid, zid, mode=desired_mode)))
                 except Exception:
-                    cur_mode = None
-                if cur_mode != desired_mode:
-                    # Por seguridad, solo cambiamos de modo si la zona o el sistema dicen soportarlo
-                    zm = z.get("modes") if isinstance(z.get("modes"), list) else (z.get("sys_modes") or [])
-                    allowed = set(int(x) for x in zm if isinstance(zm, list))
-                    if not allowed or desired_mode in allowed:
-                        tasks.append(asyncio.create_task(self.async_set_zone_params(sid, zid, on=1, mode=desired_mode)))
+                    pass
 
         if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for r in results:
-                if isinstance(r, Exception):
-                    _LOGGER.warning("Follow-master: error al aplicar en alguna zona de sistema %s: %s", sid, r)
-            # Tras aplicar, pedimos refresh
-            self.hass.async_create_task(self.async_request_refresh())
+            await asyncio.gather(*tasks, return_exceptions=True)
 
-    # ---------------- Fetchers ----------------
+    # ---------------- fetchers ----------------
 
-    async def _fetch_hvac_broadcast(self) -> dict | list | None:
+    async def _fetch_hvac_all(self) -> list[dict]:
+        """Lee todas las zonas de todos los sistemas (broadcast), con soporte 1.77/1.78."""
+        # 1) GET con systemid=127 (broadcast documentado) y zoneid=0
+        try:
+            p = await self._get_json("/hvac", params={"systemid": 127, "zoneid": 0})
+            if isinstance(p, (dict, list)):
+                items = self._extract_zone_list(p)
+                if items:
+                    self.transport_hvac = f"GET(127)"
+                    return p
+        except Exception as e:
+            _LOGGER.debug("HVAC GET broadcast(127) failed: %s", e)
+
+        # 2) GET con systemid=0 (algunos firmwares lo soportan)
         try:
             p = await self._get_json("/hvac", params={"systemid": 0, "zoneid": 0})
             if isinstance(p, (dict, list)):
-                self.transport_hvac = "GET"
-                return p
+                items = self._extract_zone_list(p)
+                if items:
+                    self.transport_hvac = f"GET(0)"
+                    return p
         except Exception as e:
-            _LOGGER.debug("HVAC GET broadcast failed: %s", e)
-        payload = await self._post_json("/hvac", {"systemID": 0, "zoneID": 0})
-        self.transport_hvac = "POST"
-        return payload
+            _LOGGER.debug("HVAC GET broadcast(0) failed: %s", e)
+
+        # 3) POST con systemID=127
+        p = await self._post_json("/hvac", {"systemID": 127, "zoneID": 0})
+        if isinstance(p, (dict, list)) and self._extract_zone_list(p):
+            self.transport_hvac = "POST(127)"
+            return p
+
+        # 4) POST con systemID=0 (último intento)
+        p = await self._post_json("/hvac", {"systemID": 0, "zoneID": 0})
+        self.transport_hvac = "POST(0)"
+        return p
 
     async def _fetch_hvac_system(self, sid: int) -> dict | None:
         try:
@@ -400,89 +484,65 @@ class AirzoneCoordinator(DataUpdateCoordinator[Dict[Tuple[int, int], dict]]):
             return None
 
     async def _fetch_iaq_all(self) -> list[dict]:
+        """Lee todos los IAQ (broadcast)."""
         items: list[dict] = []
         self.transport_iaq = None
 
-        try:
-            p = await self._get_json("/iaq", params={"systemid": 0, "iaqsensorid": 0})
-            items = self._extract_iaq_list(p)
-            if items:
-                self.transport_iaq = "GET"
-                return items
-        except Exception:
-            pass
-
-        for body in [{"systemID": 0, "iaqsensorID": 0}, {"systemID": 0}]:
+        # 1) GET broadcast 0 / 127
+        for val in (0, 127):
             try:
-                p = await self._post_json("/iaq", body)
+                p = await self._get_json("/iaq", params={"systemid": val, "iaqsensorid": 0})
                 items = self._extract_iaq_list(p)
                 if items:
-                    self.transport_iaq = "POST"
+                    self.transport_iaq = f"GET({val})"
                     return items
-            except Exception:
-                continue
+            except Exception as e:
+                _LOGGER.debug("IAQ GET broadcast(%s) failed: %s", val, e)
+
+        # 2) POST broadcast 0 / 127
+        for val in (0, 127):
+            try:
+                p = await self._post_json("/iaq", {"systemID": val, "iaqsensorID": 0})
+                items = self._extract_iaq_list(p)
+                if items:
+                    self.transport_iaq = f"POST({val})"
+                    return items
+            except Exception as e:
+                _LOGGER.debug("IAQ POST broadcast(%s) failed: %s", val, e)
 
         return items
 
-    # ---------------- Update loop ----------------
-
-    async def _async_update_data(self) -> Dict[Tuple[int, int], dict]:
-        await self._detect_prefix()
-
-        # 1) ZONAS
-        zones = await self._fetch_hvac_broadcast()
-        zones_list = self._extract_zone_list(zones)
-
-        mapped: Dict[Tuple[int, int], dict] = {}
-        system_ids: set[int] = set()
-        self.iaq_fallback = {}
-        self.zone_profiles = {}
-
-        for z in zones_list:
-            try:
-                sid = int(z.get("systemID"))
-                zid = int(z.get("zoneID"))
-                mapped[(sid, zid)] = z
-                system_ids.add(sid)
-                self.zone_profiles[(sid, zid)] = self._determine_zone_profile(z)
-
-                if "aq_quality" in z or "aq_mode" in z:
-                    cur = self.iaq_fallback.setdefault(sid, {})
-                    if "aq_quality" in z:
-                        cur["aq_quality"] = z.get("aq_quality")
-                    if "aq_mode" in z:
-                        cur["aq_mode"] = z.get("aq_mode")
-            except Exception as e:
-                _LOGGER.debug("Skipping bad zone entry %s (%s)", z, e)
-
-        # 2) SYSTEMS
-        self.systems = {}
-
-        async def fetch_system(sid: int):
-            raw = await self._fetch_hvac_system(sid)
-            data = self._extract_system_data(raw or {}, sid)
-            if isinstance(data, dict):
-                self.systems[sid] = data
-
-        if system_ids:
-            await asyncio.gather(*[fetch_system(s) for s in system_ids])
-
-        # Inyectar sys_modes en cada zona
+    async def _fetch_iaq_system(self, sid: int) -> list[dict]:
         try:
-            for (sid, zid), z in mapped.items():
-                try:
-                    sysd = self.systems.get(sid) or {}
-                    sm = sysd.get("modes")
-                    if isinstance(sm, list) and sm:
-                        z["sys_modes"] = sm
-                except Exception:
-                    continue
+            p = await self._get_json("/iaq", params={"systemid": sid, "iaqsensorid": 0})
+            if isinstance(p, (dict, list)):
+                return self._extract_iaq_list(p)
         except Exception:
             pass
-
-        # 3) WEBSERVER
         try:
-            ws = await self._post_json("/webserver", {})
+            p = await self._post_json("/iaq", {"systemID": sid, "iaqsensorID": 0})
+            return self._extract_iaq_list(p)
+        except Exception as e:
+            _LOGGER.debug("IAQ system %s fetch failed: %s", sid, e)
+            return []
+
+    # ---------------- update ----------------
+
+    async def _async_update_data(self) -> dict[Tuple[int,int], dict]:
+        # 1) HVAC (todas las zonas)
+        try:
+            hvac_payload = await self._fetch_hvac_all()
+        except Exception as e:
+            raise UpdateFailed(f"HVAC fetch error: {e}") from e
+
+        mapped = self._map_zones(self._extract_zone_list(hvac_payload) or [])
+        self.data = mapped
+
+        # 2) Webserver info (GET con fallback a POST)
+        try:
+            ws = await self._get_json("/webserver")
+            if not isinstance(ws, dict):
+                ws = await self._post_json("/webserver", {})
             if isinstance(ws, dict):
                 self.webserver = ws
                 v = ws.get("api_ver") or ws.get("version") or ws.get("ws_firmware")
@@ -492,7 +552,7 @@ class AirzoneCoordinator(DataUpdateCoordinator[Dict[Tuple[int, int], dict]]):
             _LOGGER.debug("Webserver fetch error: %s", e)
             self.webserver = None
 
-        # 4) IAQ
+        # 3) IAQ
         self.iaqs = {}
         iaq_items = await self._fetch_iaq_all()
         for item in iaq_items:
@@ -503,7 +563,8 @@ class AirzoneCoordinator(DataUpdateCoordinator[Dict[Tuple[int, int], dict]]):
             except Exception:
                 continue
 
-        # 5) Perfiles de sistema
+        # 4) Perfiles de sistema
+        system_ids = sorted({sid for (sid, _z) in mapped.keys()})
         self.system_profiles = {}
         for sid in system_ids:
             prof = self._determine_system_profile(sid)
@@ -511,13 +572,13 @@ class AirzoneCoordinator(DataUpdateCoordinator[Dict[Tuple[int, int], dict]]):
             prof["iaq_count"] = len([1 for (s, _i) in self.iaqs.keys() if s == sid]) or (1 if sid in self.iaq_fallback else 0)
             self.system_profiles[sid] = prof
 
-        # >>> NUEVO: si hay sistemas con “seguir global”, enforzamos (en background)
+        # 5) Enforce follow-master en segundo plano
         for sid in list(self._follow_master_enabled):
             self.hass.async_create_task(self._enforce_follow_master(sid))
 
         return mapped
 
-    # ---------------- API de escritura ----------------
+    # ---------------- setters ----------------
 
     async def async_set_zone_params(self, system_id: int, zone_id: int, **kwargs) -> dict | None:
         """PUT /hvac con refresco inmediato (no bloqueante)."""
@@ -525,19 +586,61 @@ class AirzoneCoordinator(DataUpdateCoordinator[Dict[Tuple[int, int], dict]]):
         body.update(kwargs)
         await self._detect_prefix()
         s = await self._ensure_session()
-        url = f"{self._base()}/hvac"
-        async with s.put(url, json=body, timeout=6) as resp:
-            txt = await resp.text()
-            if resp.status != 200:
-                _LOGGER.error("PUT /hvac %s -> %s %s", body, resp.status, txt)
-                raise UpdateFailed(f"PUT /hvac {resp.status}: {txt}")
+
+        # Intentar PUT por esquema preferido y fallback
+        for scheme in (["https","http"] if self._prefer_https else ["http","https"]):
+            base = self._https_base() if scheme == "https" else self._http_base()
+            url = f"{base}/hvac"
             try:
-                data = await resp.json(content_type=None)
-            except Exception:
-                data = {"raw": txt}
-        # refresco sin bloquear
-        self.hass.async_create_task(self.async_request_refresh())
-        return data
+                async with s.put(url, json=body, timeout=6, ssl=(False if scheme == "https" else None)) as resp:
+                    txt = await resp.text()
+                    if resp.status != 200:
+                        _LOGGER.error("PUT /hvac %s -> %s %s", body, resp.status, txt)
+                        continue
+                    try:
+                        data = await resp.json(content_type=None)
+                    except Exception:
+                        data = {"raw": txt}
+                    # refresco sin bloquear
+                    self.hass.async_create_task(self.async_request_refresh())
+                    self._prefer_https = (scheme == "https")
+                    self.transport_scheme = scheme
+                    return data
+            except Exception as e:
+                _LOGGER.debug("PUT /hvac %s failed on %s: %s", body, scheme, e)
+                continue
+
+        raise UpdateFailed("PUT /hvac failed on both http/https")
+
+    async def async_set_iaq_params(self, system_id: int, iaq_id: int, **kwargs) -> dict | None:
+        """PUT /iaq con refresco inmediato (no bloqueante)."""
+        body = {"systemID": int(system_id), "iaqsensorID": int(iaq_id)}
+        body.update(kwargs)
+        await self._detect_prefix()
+        s = await self._ensure_session()
+
+        for scheme in (["https","http"] if self._prefer_https else ["http","https"]):
+            base = self._https_base() if scheme == "https" else self._http_base()
+            url = f"{base}/iaq"
+            try:
+                async with s.put(url, json=body, timeout=6, ssl=(False if scheme == "https" else None)) as resp:
+                    txt = await resp.text()
+                    if resp.status != 200:
+                        _LOGGER.error("PUT /iaq %s -> %s %s", body, resp.status, txt)
+                        continue
+                    try:
+                        data = await resp.json(content_type=None)
+                    except Exception:
+                        data = {"raw": txt}
+                    self.hass.async_create_task(self.async_request_refresh())
+                    self._prefer_https = (scheme == "https")
+                    self.transport_scheme = scheme
+                    return data
+            except Exception as e:
+                _LOGGER.debug("PUT /iaq %s failed on %s: %s", body, scheme, e)
+                continue
+
+        raise UpdateFailed("PUT /iaq failed on both http/https")
 
     async def async_close(self) -> None:
         if self._session and not self._session.closed:

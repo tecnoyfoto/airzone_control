@@ -1,30 +1,56 @@
 {
-  "config": {
-    "step": {
-      "user": {
-        "title": "Airzone Control",
-        "description": "Conecta con tu Airzone Local API (webserver).",
-        "data": {
-          "host": "Host",
-          "port": "Puerto"
-        }
-      }
+  "title": "Airzone Control",
+  "entity": {
+    "button": {
+      "hotel_off_all": { "name": "Apagar todo (Hotel)" },
+      "hotel_on_all": { "name": "Encender todo (Hotel)" },
+      "hotel_copy_sp": { "name": "Copiar consigna a todas (Hotel)" }
     },
-    "error": {
-      "cannot_connect": "No se puede conectar. Revisa host/puerto y que el webserver de Airzone esté accesible."
+    "select": {
+      "mode": { "name": "Modo" },
+      "mode_global": { "name": "Modo (global)" },
+      "speed": { "name": "Velocidad" },
+      "ventilation": { "name": "Ventilación" }
     },
-    "abort": {
-      "already_configured": "Este host ya está configurado."
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Airzone Control - Opciones",
-        "data": {
-          "scan_interval": "Intervalo de sondeo (segundos)"
-        }
-      }
+    "sensor": {
+      "system_profile": { "name": "Perfil del sistema" },
+      "mc_connected": { "name": "MC conectado" },
+      "outdoor_temp": { "name": "Temperatura exterior" },
+      "return_temp": { "name": "Temperatura retorno" },
+      "work_temp": { "name": "Temperatura trabajo" },
+      "cond_risk_master": { "name": "Riesgo de condensación (máster)" },
+
+      "air_demand": { "name": "Demanda de aire" },
+      "heat_demand": { "name": "Demanda de calor" },
+      "cold_demand": { "name": "Demanda de frío" },
+      "floor_demand": { "name": "Demanda de suelo radiante" },
+      "errors": { "name": "Errores" },
+      "humidity": { "name": "Humedad" },
+      "temperature": { "name": "Temperatura" },
+      "open_window": { "name": "Ventana abierta" },
+      "zone_profile": { "name": "Perfil de zona" },
+
+      "iaq_index": { "name": "IAQ index" },
+      "iaq_index_text": { "name": "IAQ index (texto)" },
+      "iaq_score": { "name": "IAQ score" },
+      "aqi_pm_category": { "name": "AQI-PM (categoría)" },
+      "aqi_pm_partial": { "name": "AQI-PM (parcial)" },
+      "air_quality_text": { "name": "Calidad del aire" },
+      "co2": { "name": "CO₂" },
+      "tvoc": { "name": "TVOC" },
+      "pm25": { "name": "PM2.5" },
+      "pm10": { "name": "PM10" },
+      "abs_humidity_gm3": { "name": "Humedad absoluta g/m³" },
+      "humidex_master": { "name": "Humidex (máster)" },
+      "humidex_master_pct": { "name": "Humidex (máster) %" },
+      "iaq_home": { "name": "IAQ doméstico" },
+      "iaq_home_text": { "name": "IAQ doméstico (texto)" },
+      "needs_ventilation": { "name": "Necesita ventilación" },
+
+      "cloud_connected": { "name": "Cloud conectado" },
+      "ws_version": { "name": "Versión del Webserver" },
+      "transport": { "name": "Transporte" },
+      "pressure": { "name": "Presión (hPa)" }
     }
   }
 }
