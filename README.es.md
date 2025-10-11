@@ -64,6 +64,7 @@ custom_components/
     ├── coordinator.py
     ├── api_modes.py
     ├── climate.py
+    ├── i18n.py
     ├── sensor.py
     ├── binary_sensor.py
     ├── select.py
@@ -73,6 +74,13 @@ custom_components/
       ├── en.json
       ├── es.json
       └── ca.json
+      ├── fr.json
+      ├── it.json
+      ├── pt.json
+      ├── de.json
+      ├── gl.json
+      ├── nl.json
+      └── eu.json
       
 2. **Reinicia** Home Assistant.
 
