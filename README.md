@@ -137,11 +137,20 @@ To support **multiple devices** safely, some `unique_id` values are now **unique
 
 ---
 
-## 📈 Roadmap (1.5.0)
+## 🌐 Available Translations
 
-- **Dynamic fan speeds** (per-zone select + sync with `climate.fan_mode`).  
-- **Firmware update from Home Assistant** (when supported by device/API).  
-- Diagnostics improvements.
+This integration is fully translated into the following languages:
+
+- Spanish 🇪🇸
+- English 🇬🇧
+- Catalan 🇨🇦
+- French 🇫🇷
+- Italian 🇮🇹
+- Portuguese 🇵🇹
+- German 🇩🇪
+- Galician 🇬🇷
+- Dutch 🇳🇱
+- Basque 🇪🇺
 
 ---
 

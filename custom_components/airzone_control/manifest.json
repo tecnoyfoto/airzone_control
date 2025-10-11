@@ -3,7 +3,7 @@
   "name": "Airzone Control",
   "documentation": "https://github.com/tecnoyfoto/airzone_control",
   "issue_tracker": "https://github.com/tecnoyfoto/airzone_control/issues",
-  "version": "1.4.1",
+  "version": "1.5.1",
   "requirements": [],
   "codeowners": ["@tecnoyfoto"],
   "iot_class": "local_polling",
