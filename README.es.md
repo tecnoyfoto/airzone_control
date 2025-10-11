@@ -13,6 +13,26 @@ A diferencia de la integración oficial, **Airzone Control**:
 > **Importante:** la API Local vive en **Airzone Webserver** o **Aidoo Pro**. Controladoras como **Flexa 3** por sí solas **no exponen** la API REST. Necesitas tener Webserver/Aidoo en la instalación.
 
 ---
+## ✨ Novedades (v1.5.1)
+
+### 🌐 Internacionalización (i18n)
+- Traducciones completamente actualizadas para:
+  - 🇪🇸 Español  
+  - 🇬🇧 Inglés  
+  - 🇨🇦 Catalán  
+  - 🇫🇷 Francés  
+  - 🇮🇹 Italiano  
+  - 🇵🇹 Portugués  
+  - 🇩🇪 Alemán  
+- Nuevos idiomas añadidos:
+  - 🇬🇷 Gallego (`gl`)  
+  - 🇳🇱 Neerlandés (`nl`)  
+  - 🇪🇺 Euskera (`eu`)  
+- Estructura unificada de `translation_key` para todas las entidades (`sensor`, `select`, `button`, etc.)
+- Correcciones menores en los nombres de entidades.
+- Sin cambios funcionales en la lógica de la integración.
+
+---
 
 ## ✨ Novedades (v1.5.0)
 

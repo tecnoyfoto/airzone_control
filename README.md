@@ -14,6 +14,27 @@ Compared to the official integration, **Airzone Control**:
 
 ---
 
+## ✨ What’s new (v1.5.1)
+
+### 🌐 Internationalization (i18n)
+- Fully updated translations for:
+  - 🇪🇸 Spanish
+  - 🇬🇧 English
+  - 🇨🇦 Catalan
+  - 🇫🇷 French
+  - 🇮🇹 Italian
+  - 🇵🇹 Portuguese
+  - 🇩🇪 German
+- Added support for new languages:
+  - 🇬🇷 Galician (`gl`)
+  - 🇳🇱 Dutch (`nl`)
+  - 🇪🇺 Basque (`eu`)
+- Unified `translation_key` structure for all entities (`sensor`, `select`, `button`, etc.)
+- Minor corrections in entity names.
+- No functional changes to the integration logic.
+
+---
+
 ## ✨ What’s new (v1.5.0)
 
 - New zone `select` entities: **Mode**, **Speed**, and **IAQ Ventilation**.
