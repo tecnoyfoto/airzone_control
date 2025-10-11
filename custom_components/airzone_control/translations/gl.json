@@ -1,0 +1,169 @@
+{
+  "title": "Airzone Control",
+  "entity": {
+    "button": {
+      "hotel_off_all": { "name": "Apagar todo (Hotel)" },
+      "hotel_on_all": { "name": "Acender todo (Hotel)" },
+      "hotel_copy_sp": { "name": "Copiar consigna a todas (Hotel)" }
+    },
+    "select": {
+      "mode": { "name": "Modo" },
+      "mode_global": { "name": "Modo (global)" },
+      "speed": { "name": "Velocidade" },
+      "ventilation": { "name": "Ventilación" }
+    },
+    "sensor": {
+      "system_profile": { "name": "Perfil do sistema" },
+      "mc_connected": { "name": "MC conectado" },
+      "outdoor_temp": { "name": "Temperatura exterior" },
+      "return_temp": { "name": "Temperatura de retorno" },
+      "work_temp": { "name": "Temperatura de traballo" },
+      "cond_risk_master": { "name": "Risco de condensación (máster)" },
+      "air_demand": { "name": "Demanda de aire" },
+      "heat_demand": { "name": "Demanda de calor" },
+      "cold_demand": { "name": "Demanda de frío" },
+      "floor_demand": { "name": "Demanda de chan radiante" },
+      "errors": { "name": "Erros" },
+      "humidity": { "name": "Humidade" },
+      "temperature": { "name": "Temperatura" },
+      "open_window": { "name": "Xanela aberta" },
+      "zone_profile": { "name": "Perfil de zona" },
+      "iaq_index": { "name": "Índice IAQ" },
+      "iaq_index_text": { "name": "Índice IAQ (texto)" },
+      "iaq_score": { "name": "Puntuación IAQ" },
+      "aqi_pm_category": { "name": "AQI-PM (categoría)" },
+      "aqi_pm_partial": { "name": "AQI-PM (parcial)" },
+      "air_quality_text": { "name": "Calidade do aire" },
+      "co2": { "name": "CO₂" },
+      "tvoc": { "name": "TVOC" },
+      "pm25": { "name": "PM2.5" },
+      "pm10": { "name": "PM10" },
+      "abs_humidity_gm3": { "name": "Humidade absoluta g/m³" },
+      "humidex_master": { "name": "Humidex (máster)" },
+      "humidex_master_pct": { "name": "Humidex (máster) %" },
+      "iaq_home": { "name": "IAQ doméstico" },
+      "iaq_home_text": { "name": "IAQ doméstico (texto)" },
+      "needs_ventilation": { "name": "Precisa ventilación" },
+      "cloud_connected": { "name": "Nube conectada" },
+      "ws_version": { "name": "Versión do servidor web" },
+      "transport": { "name": "Transporte" },
+      "pressure": { "name": "Presión (hPa)" },
+      "airzone_system_id": { "name": "ID do sistema" },
+      "airzone_system_firmware": { "name": "Versión de firmware" },
+      "airzone_system_mode": { "name": "Modo do sistema" },
+      "airzone_fan_speed": { "name": "Velocidade do ventilador" },
+      "airzone_system_sleep": { "name": "Modo repouso" },
+      "airzone_system_errors": { "name": "Erros do sistema" },
+      "airzone_system_units": { "name": "Unidades de temperatura" },
+      "airzone_low_battery": { "name": "Zonas con batería baixa" },
+      "airzone_iaq_co2": { "name": "CO₂ (Calidade do aire)" },
+      "airzone_iaq_pm25": { "name": "Partículas PM2.5" },
+      "airzone_iaq_pm10": { "name": "Partículas PM10" },
+      "airzone_iaq_tvoc": { "name": "Compostos orgánicos totais (TVOC)" },
+      "airzone_iaq_pressure": { "name": "Presión atmosférica" },
+      "airzone_iaq_index": { "name": "Índice de calidade do aire" },
+      "airzone_iaq_score": { "name": "Puntuación de calidade do aire" },
+      "airzone_iaq_ventmode": { "name": "Modo de ventilación IAQ" }
+    },
+    "sensor.airzone_system_id": "ID do sistema",
+    "sensor.airzone_system_firmware": "Versión de firmware",
+    "sensor.airzone_system_mode": "Modo do sistema",
+    "sensor.airzone_fan_speed": "Velocidade do ventilador",
+    "sensor.airzone_system_sleep": "Modo repouso",
+    "sensor.airzone_system_errors": "Erros do sistema",
+    "sensor.airzone_system_units": "Unidades de temperatura",
+    "sensor.airzone_low_battery": "Zonas con batería baixa",
+    "sensor.airzone_iaq_co2": "CO₂ (Calidade do aire)",
+    "sensor.airzone_iaq_pm25": "Partículas PM2.5",
+    "sensor.airzone_iaq_pm10": "Partículas PM10",
+    "sensor.airzone_iaq_tvoc": "Compostos orgánicos totais (TVOC)",
+    "sensor.airzone_iaq_pressure": "Presión atmosférica",
+    "sensor.airzone_iaq_index": "Índice de calidade do aire",
+    "sensor.airzone_iaq_score": "Puntuación de calidade do aire",
+    "sensor.airzone_iaq_ventmode": "Modo de ventilación IAQ"
+  },
+  "config": {
+    "step": {
+      "user": {
+        "title": "Airzone Control",
+        "description": "Conecta coa túa API local de Airzone (servidor web).",
+        "data": {
+          "host": "Host",
+          "port": "Porto"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Non se pode conectar. Revisa host/porto e que o servidor web de Airzone sexa accesible."
+    },
+    "abort": {
+      "already_configured": "Este host xa está configurado."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Airzone Control - Opcións",
+        "data": {
+          "scan_interval": "Intervalo de sondaxe (segundos)"
+        }
+      }
+    }
+  },
+  "state": {
+    "off": "Apagado",
+    "on": "Acendido",
+    "Stop": "Parada",
+    "Ventilación": "Ventilación",
+    "Fan": "Ventilación",
+    "Heat": "Calefacción",
+    "Calor": "Calor",
+    "Cool": "Frío",
+    "Frío": "Frío",
+    "Auto": "Auto",
+    "Automatic": "Automático",
+    "Automático": "Automático",
+    "Dry": "Seco",
+    "Seco": "Seco"
+  },
+  "mode": {
+    "Stop": "Parada",
+    "Ventilación": "Ventilación",
+    "Calor": "Calor",
+    "Frío": "Frío",
+    "Automático": "Automático",
+    "Seco": "Seco"
+  },
+  "error": {
+    "Sin errores": "Sen erros",
+    "Error 3": "Elemento motorizado non conectado á saída do motor.",
+    "Error 4": "Elemento motorizado bloqueado (detectouse comportamento anómalo).",
+    "Error 5": "Sonda de temperatura en circuíto aberto (sensor de zona desconectado).",
+    "Error 6": "Sonda de temperatura en curtocircuíto (sensor de zona en curto).",
+    "Error 7": "Elemento incompatible (dispositivo ou módulo non soportado polo sistema).",
+    "Error 8": "Termostato Lite non atopado (sen comunicación co termostato da zona).",
+    "F05-H": "Sonda de temperatura da batería de calefacción en circuíto aberto.",
+    "F05-C": "Sonda de temperatura da batería de refrixeración en circuíto aberto.",
+    "F06-H": "Sonda de temperatura da batería de calefacción en curtocircuíto.",
+    "F06-C": "Sonda de temperatura da batería de refrixeración en curtocircuíto.",
+    "IU error IU4": "Erro IU IU4",
+    "Error IAQ1": "Erro IAQ1",
+    "Error IAQ2": "Erro IAQ2",
+    "Error IAQ3": "Erro IAQ3",
+    "Error IAQ4": "Erro IAQ4",
+    "Error 9": "Erro 9",
+    "Error 11": "Erro 11",
+    "Error 13": "Erro 13",
+    "Error 15": "Erro 15",
+    "Error 16": "Erro 16",
+    "Error C09": "Erro C09",
+    "Error C11": "Erro C11",
+    "machineready_error": "Erro de preparación de máquina",
+    "Low battery": "Batería baixa",
+    "Window alarm": "Alarma de xanela",
+    "Presence alarm": "Alarma de presenza",
+    "Anti-freezing alarm": "Alarma anti-conxelación",
+    "Active dew": "Orballo activo",
+    "Active dew protection": "Protección de orballo activa"
+  }
+}

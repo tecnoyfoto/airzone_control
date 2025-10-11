@@ -1,0 +1,179 @@
+{
+  "title": "Airzone Control",
+  "entity": {
+    "button": {
+      "hotel_off_all": { "name": "Guztia itzali (Hotela)" },
+      "hotel_on_all": { "name": "Guztia piztu (Hotela)" },
+      "hotel_copy_sp": { "name": "Ezarpen-balioa guztietara kopiatu (Hotela)" }
+    },
+    "select": {
+      "mode": { "name": "Modua" },
+      "mode_global": { "name": "Modua (orokorra)" },
+      "speed": { "name": "Abiadura" },
+      "ventilation": { "name": "Aireztapena" }
+    },
+    "sensor": {
+      "system_profile": { "name": "Sistemaren profila" },
+      "mc_connected": { "name": "MC konektatuta" },
+      "outdoor_temp": { "name": "Kanpoko tenperatura" },
+      "return_temp": { "name": "Itzulera-tenperatura" },
+      "work_temp": { "name": "Funtzionamendu-tenperatura" },
+      "cond_risk_master": { "name": "Kondentsazio arriskua (nagusia)" },
+
+      "air_demand": { "name": "Aire-eskaria" },
+      "heat_demand": { "name": "Berokuntza-eskaria" },
+      "cold_demand": { "name": "Hozte-eskaria" },
+      "floor_demand": { "name": "Zoru erradiantaren eskaria" },
+      "errors": { "name": "Akatsak" },
+      "humidity": { "name": "Hezetasuna" },
+      "temperature": { "name": "Tenperatura" },
+      "open_window": { "name": "Leihoa irekita" },
+      "zone_profile": { "name": "Zonaren profila" },
+
+      "iaq_index": { "name": "IAQ indizea" },
+      "iaq_index_text": { "name": "IAQ indizea (testua)" },
+      "iaq_score": { "name": "IAQ puntuazioa" },
+      "aqi_pm_category": { "name": "AQI-PM (kategoria)" },
+      "aqi_pm_partial": { "name": "AQI-PM (partziala)" },
+      "air_quality_text": { "name": "Airearen kalitatea" },
+      "co2": { "name": "CO₂" },
+      "tvoc": { "name": "TVOC" },
+      "pm25": { "name": "PM2.5" },
+      "pm10": { "name": "PM10" },
+      "abs_humidity_gm3": { "name": "Hezetasun absolutua g/m³" },
+      "humidex_master": { "name": "Humidex (nagusia)" },
+      "humidex_master_pct": { "name": "Humidex (nagusia) %" },
+      "iaq_home": { "name": "Etxeko IAQ" },
+      "iaq_home_text": { "name": "Etxeko IAQ (testua)" },
+      "needs_ventilation": { "name": "Aireztapena behar du" },
+
+      "cloud_connected": { "name": "Hodeira konektatuta" },
+      "ws_version": { "name": "Web zerbitzariaren bertsioa" },
+      "transport": { "name": "Garraioa" },
+      "pressure": { "name": "Presioa (hPa)" },
+
+      "airzone_system_id": { "name": "Sistemaren ID" },
+      "airzone_system_firmware": { "name": "Firmware bertsioa" },
+      "airzone_system_mode": { "name": "Sistemaren modua" },
+      "airzone_fan_speed": { "name": "Haizagailuaren abiadura" },
+      "airzone_system_sleep": { "name": "Lo modua" },
+      "airzone_system_errors": { "name": "Sistemaren akatsak" },
+      "airzone_system_units": { "name": "Tenperatura-unitateak" },
+      "airzone_low_battery": { "name": "Bateria baxua duten guneak" },
+      "airzone_iaq_co2": { "name": "CO₂ (Airearen kalitatea)" },
+      "airzone_iaq_pm25": { "name": "PM2.5 partikulak" },
+      "airzone_iaq_pm10": { "name": "PM10 partikulak" },
+      "airzone_iaq_tvoc": { "name": "Guztizko VOC" },
+      "airzone_iaq_pressure": { "name": "Aire-presioa" },
+      "airzone_iaq_index": { "name": "Airearen kalitate-indizea" },
+      "airzone_iaq_score": { "name": "Airearen kalitate-puntuazioa" },
+      "airzone_iaq_ventmode": { "name": "IAQ aireztapen modua" }
+    },
+
+    "sensor.airzone_system_id": "Sistemaren ID",
+    "sensor.airzone_system_firmware": "Firmware bertsioa",
+    "sensor.airzone_system_mode": "Sistemaren modua",
+    "sensor.airzone_fan_speed": "Haizagailuaren abiadura",
+    "sensor.airzone_system_sleep": "Lo modua",
+    "sensor.airzone_system_errors": "Sistemaren akatsak",
+    "sensor.airzone_system_units": "Tenperatura-unitateak",
+    "sensor.airzone_low_battery": "Bateria baxua duten guneak",
+    "sensor.airzone_iaq_co2": "CO₂ (Airearen kalitatea)",
+    "sensor.airzone_iaq_pm25": "PM2.5 partikulak",
+    "sensor.airzone_iaq_pm10": "PM10 partikulak",
+    "sensor.airzone_iaq_tvoc": "Guztizko VOC",
+    "sensor.airzone_iaq_pressure": "Aire-presioa",
+    "sensor.airzone_iaq_index": "Airearen kalitate-indizea",
+    "sensor.airzone_iaq_score": "Airearen kalitate-puntuazioa",
+    "sensor.airzone_iaq_ventmode": "IAQ aireztapen modua"
+  },
+
+  "config": {
+    "step": {
+      "user": {
+        "title": "Airzone Control",
+        "description": "Konektatu zure Airzone Local APIra (web zerbitzaria).",
+        "data": {
+          "host": "Host",
+          "port": "Portua"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Ezin da konektatu. Egiaztatu host/portua eta Airzone web zerbitzaria eskuragarri dagoela."
+    },
+    "abort": {
+      "already_configured": "Host hau dagoeneko konfiguratuta dago."
+    }
+  },
+
+  "options": {
+    "step": {
+      "init": {
+        "title": "Airzone Control - Aukerak",
+        "data": {
+          "scan_interval": "Eskaneatze-tartea (segunduak)"
+        }
+      }
+    }
+  },
+
+  "state": {
+    "off": "Itzalita",
+    "on": "Piztuta",
+    "Stop": "Gelditu",
+    "Ventilación": "Aireztapena",
+    "Fan": "Aireztapena",
+    "Heat": "Berokuntza",
+    "Calor": "Berokuntza",
+    "Cool": "Hoztea",
+    "Frío": "Hoztea",
+    "Auto": "Auto",
+    "Automatic": "Auto",
+    "Automático": "Auto",
+    "Dry": "Lehorra",
+    "Seco": "Lehorra"
+  },
+
+  "mode": {
+    "Stop": "Gelditu",
+    "Ventilación": "Aireztapena",
+    "Calor": "Berokuntza",
+    "Frío": "Hoztea",
+    "Automático": "Auto",
+    "Seco": "Lehorra"
+  },
+
+  "error": {
+    "Sin errores": "Akatsik ez",
+    "Error 3": "Elementu motorizatua motor irteerara konektatu gabe.",
+    "Error 4": "Elementu motorizatua blokeatuta (portaera anormala detektatua).",
+    "Error 5": "Tenperatura-zunda zirkuitu irekian (zonako sentsorea deskonektatuta).",
+    "Error 6": "Tenperatura-zunda zirkuitu laburrean (zonako sentsorea zirkuitu laburrean).",
+    "Error 7": "Elementu bateragaitza (gailua edo modulua sistemak ez du onartzen).",
+    "Error 8": "Lite termostatoa ez da aurkitu (ez dago komunikaziorik zonako termostatoarekin).",
+    "F05-H": "Berokuntza bateriaren tenperatura-zunda zirkuitu irekian.",
+    "F05-C": "Hozte bateriaren tenperatura-zunda zirkuitu irekian.",
+    "F06-H": "Berokuntza bateriaren tenperatura-zunda zirkuitu laburrean.",
+    "F06-C": "Hozte bateriaren tenperatura-zunda zirkuitu laburrean.",
+    "IU error IU4": "IU errorea IU4",
+    "Error IAQ1": "IAQ errorea 1",
+    "Error IAQ2": "IAQ errorea 2",
+    "Error IAQ3": "IAQ errorea 3",
+    "Error IAQ4": "IAQ errorea 4",
+    "Error 9": "Errorea 9",
+    "Error 11": "Errorea 11",
+    "Error 13": "Errorea 13",
+    "Error 15": "Errorea 15",
+    "Error 16": "Errorea 16",
+    "Error C09": "Errorea C09",
+    "Error C11": "Errorea C11",
+    "machineready_error": "Makina prestatzeko errorea",
+    "Low battery": "Bateria baxua",
+    "Window alarm": "Leiho alarma",
+    "Presence alarm": "Presentzia alarma",
+    "Anti-freezing alarm": "Izozte aurkako alarma",
+    "Active dew": "Ihintz aktiboa",
+    "Active dew protection": "Ihintzaren babes aktiboa"
+  }
+}

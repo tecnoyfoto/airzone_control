@@ -2,8 +2,8 @@
   "title": "Airzone Control",
   "entity": {
     "button": {
-      "hotel_off_all": { "name": "Turn all off (Hotel)" },
-      "hotel_on_all": { "name": "Turn all on (Hotel)" },
+      "hotel_off_all": { "name": "Turn off all (Hotel)" },
+      "hotel_on_all": { "name": "Turn on all (Hotel)" },
       "hotel_copy_sp": { "name": "Copy setpoint to all (Hotel)" }
     },
     "select": {
@@ -17,19 +17,17 @@
       "mc_connected": { "name": "MC connected" },
       "outdoor_temp": { "name": "Outdoor temperature" },
       "return_temp": { "name": "Return temperature" },
-      "work_temp": { "name": "Work temperature" },
+      "work_temp": { "name": "Operating temperature" },
       "cond_risk_master": { "name": "Condensation risk (master)" },
-
       "air_demand": { "name": "Air demand" },
       "heat_demand": { "name": "Heat demand" },
       "cold_demand": { "name": "Cooling demand" },
-      "floor_demand": { "name": "Floor heating demand" },
+      "floor_demand": { "name": "Radiant floor demand" },
       "errors": { "name": "Errors" },
       "humidity": { "name": "Humidity" },
       "temperature": { "name": "Temperature" },
       "open_window": { "name": "Open window" },
       "zone_profile": { "name": "Zone profile" },
-
       "iaq_index": { "name": "IAQ index" },
       "iaq_index_text": { "name": "IAQ index (text)" },
       "iaq_score": { "name": "IAQ score" },
@@ -46,11 +44,126 @@
       "iaq_home": { "name": "Home IAQ" },
       "iaq_home_text": { "name": "Home IAQ (text)" },
       "needs_ventilation": { "name": "Needs ventilation" },
-
       "cloud_connected": { "name": "Cloud connected" },
       "ws_version": { "name": "Webserver version" },
       "transport": { "name": "Transport" },
-      "pressure": { "name": "Pressure (hPa)" }
+      "pressure": { "name": "Pressure (hPa)" },
+      "airzone_system_id": { "name": "System ID" },
+      "airzone_system_firmware": { "name": "Firmware version" },
+      "airzone_system_mode": { "name": "System mode" },
+      "airzone_fan_speed": { "name": "Fan speed" },
+      "airzone_system_sleep": { "name": "Sleep mode" },
+      "airzone_system_errors": { "name": "System errors" },
+      "airzone_system_units": { "name": "Temperature units" },
+      "airzone_low_battery": { "name": "Zones with low battery" },
+      "airzone_iaq_co2": { "name": "CO₂ (Air quality)" },
+      "airzone_iaq_pm25": { "name": "PM2.5 particles" },
+      "airzone_iaq_pm10": { "name": "PM10 particles" },
+      "airzone_iaq_tvoc": { "name": "Total VOC" },
+      "airzone_iaq_pressure": { "name": "Air pressure" },
+      "airzone_iaq_index": { "name": "Air quality index" },
+      "airzone_iaq_score": { "name": "Air quality score" },
+      "airzone_iaq_ventmode": { "name": "IAQ ventilation mode" }
+    },
+    "sensor.airzone_system_id": "System ID",
+    "sensor.airzone_system_firmware": "Firmware version",
+    "sensor.airzone_system_mode": "System mode",
+    "sensor.airzone_fan_speed": "Fan speed",
+    "sensor.airzone_system_sleep": "Sleep mode",
+    "sensor.airzone_system_errors": "System errors",
+    "sensor.airzone_system_units": "Temperature units",
+    "sensor.airzone_low_battery": "Zones with low battery",
+    "sensor.airzone_iaq_co2": "CO₂ (Air quality)",
+    "sensor.airzone_iaq_pm25": "PM2.5 particles",
+    "sensor.airzone_iaq_pm10": "PM10 particles",
+    "sensor.airzone_iaq_tvoc": "Total VOC",
+    "sensor.airzone_iaq_pressure": "Air pressure",
+    "sensor.airzone_iaq_index": "Air quality index",
+    "sensor.airzone_iaq_score": "Air quality score",
+    "sensor.airzone_iaq_ventmode": "IAQ ventilation mode"
+  },
+  "config": {
+    "step": {
+      "user": {
+        "title": "Airzone Control",
+        "description": "Connect to your Airzone Local API (webserver).",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect. Please check host/port and that the Airzone webserver is reachable."
+    },
+    "abort": {
+      "already_configured": "This host is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Airzone Control - Options",
+        "data": {
+          "scan_interval": "Scan interval (seconds)"
+        }
+      }
+    }
+  },
+  "state": {
+    "off": "Off",
+    "on": "On",
+    "Stop": "Stop",
+    "Ventilación": "Fan",
+    "Fan": "Fan",
+    "Heat": "Heat",
+    "Calor": "Heat",
+    "Cool": "Cool",
+    "Frío": "Cool",
+    "Auto": "Auto",
+    "Automatic": "Auto",
+    "Automático": "Auto",
+    "Dry": "Dry",
+    "Seco": "Dry"
+  },
+  "mode": {
+    "Stop": "Stop",
+    "Ventilación": "Fan",
+    "Calor": "Heat",
+    "Frío": "Cool",
+    "Automático": "Auto",
+    "Seco": "Dry"
+  },
+  "error": {
+    "Sin errores": "No errors",
+    "Error 3": "Motorized element not connected to motor output.",
+    "Error 4": "Motorized element blocked (abnormal behavior detected).",
+    "Error 5": "Temperature probe open circuit (zone sensor disconnected).",
+    "Error 6": "Temperature probe short circuit (zone sensor shorted).",
+    "Error 7": "Incompatible element (device or module not supported by the system).",
+    "Error 8": "Lite thermostat not found (no communication with the zone thermostat).",
+    "F05-H": "Heating coil temperature probe open circuit.",
+    "F05-C": "Cooling coil temperature probe open circuit.",
+    "F06-H": "Heating coil temperature probe short circuit.",
+    "F06-C": "Cooling coil temperature probe short circuit.",
+    "IU error IU4": "IU error IU4",
+    "Error IAQ1": "IAQ error 1",
+    "Error IAQ2": "IAQ error 2",
+    "Error IAQ3": "IAQ error 3",
+    "Error IAQ4": "IAQ error 4",
+    "Error 9": "Error 9",
+    "Error 11": "Error 11",
+    "Error 13": "Error 13",
+    "Error 15": "Error 15",
+    "Error 16": "Error 16",
+    "Error C09": "Error C09",
+    "Error C11": "Error C11",
+    "machineready_error": "Machine-ready error",
+    "Low battery": "Low battery",
+    "Window alarm": "Window alarm",
+    "Presence alarm": "Presence alarm",
+    "Anti-freezing alarm": "Anti-freezing alarm",
+    "Active dew": "Active dew",
+    "Active dew protection": "Active dew protection"
   }
 }

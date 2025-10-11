@@ -137,11 +137,19 @@ Para permitir **varios equipos** sin colisiones, algunos `unique_id` ahora son *
 
 ---
 
-## 📈 Roadmap (1.5.0)
+## 🌐 Traducciones disponibles
 
-- **Velocidad de ventilador dinámica** (select por zona + sincronía con `fan_mode`).  
-- **Actualizar firmware desde Home Assistant** (si el equipo/API lo soporta).  
-- Mejoras de diagnósticos.
+Esta integración está traducida a los siguientes idiomas:
+- Español 🇪🇸
+- Inglés 🇬🇧
+- Catalán 🇨🇦
+- Francés 🇫🇷
+- Italiano 🇮🇹
+- Portugués 🇵🇹
+- Alemán 🇩🇪
+- Gallego 🇬🇷
+- Neerlandés 🇳🇱
+- Euskera 🇪🇺
 
 ---
 

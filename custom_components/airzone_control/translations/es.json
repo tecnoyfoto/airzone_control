@@ -16,10 +16,9 @@
       "system_profile": { "name": "Perfil del sistema" },
       "mc_connected": { "name": "MC conectado" },
       "outdoor_temp": { "name": "Temperatura exterior" },
-      "return_temp": { "name": "Temperatura retorno" },
-      "work_temp": { "name": "Temperatura trabajo" },
+      "return_temp": { "name": "Temperatura de retorno" },
+      "work_temp": { "name": "Temperatura de trabajo" },
       "cond_risk_master": { "name": "Riesgo de condensación (máster)" },
-
       "air_demand": { "name": "Demanda de aire" },
       "heat_demand": { "name": "Demanda de calor" },
       "cold_demand": { "name": "Demanda de frío" },
@@ -29,10 +28,9 @@
       "temperature": { "name": "Temperatura" },
       "open_window": { "name": "Ventana abierta" },
       "zone_profile": { "name": "Perfil de zona" },
-
-      "iaq_index": { "name": "IAQ index" },
-      "iaq_index_text": { "name": "IAQ index (texto)" },
-      "iaq_score": { "name": "IAQ score" },
+      "iaq_index": { "name": "Índice IAQ" },
+      "iaq_index_text": { "name": "Índice IAQ (texto)" },
+      "iaq_score": { "name": "Puntuación IAQ" },
       "aqi_pm_category": { "name": "AQI-PM (categoría)" },
       "aqi_pm_partial": { "name": "AQI-PM (parcial)" },
       "air_quality_text": { "name": "Calidad del aire" },
@@ -46,11 +44,126 @@
       "iaq_home": { "name": "IAQ doméstico" },
       "iaq_home_text": { "name": "IAQ doméstico (texto)" },
       "needs_ventilation": { "name": "Necesita ventilación" },
-
-      "cloud_connected": { "name": "Cloud conectado" },
+      "cloud_connected": { "name": "Nube conectada" },
       "ws_version": { "name": "Versión del Webserver" },
       "transport": { "name": "Transporte" },
-      "pressure": { "name": "Presión (hPa)" }
+      "pressure": { "name": "Presión (hPa)" },
+      "airzone_system_id": { "name": "ID del sistema" },
+      "airzone_system_firmware": { "name": "Versión de firmware" },
+      "airzone_system_mode": { "name": "Modo del sistema" },
+      "airzone_fan_speed": { "name": "Velocidad del ventilador" },
+      "airzone_system_sleep": { "name": "Modo reposo" },
+      "airzone_system_errors": { "name": "Errores del sistema" },
+      "airzone_system_units": { "name": "Unidades de temperatura" },
+      "airzone_low_battery": { "name": "Zonas con batería baja" },
+      "airzone_iaq_co2": { "name": "CO₂ (Calidad del aire)" },
+      "airzone_iaq_pm25": { "name": "Partículas PM2.5" },
+      "airzone_iaq_pm10": { "name": "Partículas PM10" },
+      "airzone_iaq_tvoc": { "name": "Compuestos orgánicos totales (TVOC)" },
+      "airzone_iaq_pressure": { "name": "Presión atmosférica" },
+      "airzone_iaq_index": { "name": "Índice de calidad del aire" },
+      "airzone_iaq_score": { "name": "Puntuación de calidad del aire" },
+      "airzone_iaq_ventmode": { "name": "Modo de ventilación IAQ" }
+    },
+    "sensor.airzone_system_id": "ID del sistema",
+    "sensor.airzone_system_firmware": "Versión de firmware",
+    "sensor.airzone_system_mode": "Modo del sistema",
+    "sensor.airzone_fan_speed": "Velocidad del ventilador",
+    "sensor.airzone_system_sleep": "Modo reposo",
+    "sensor.airzone_system_errors": "Errores del sistema",
+    "sensor.airzone_system_units": "Unidades de temperatura",
+    "sensor.airzone_low_battery": "Zonas con batería baja",
+    "sensor.airzone_iaq_co2": "CO₂ (Calidad del aire)",
+    "sensor.airzone_iaq_pm25": "Partículas PM2.5",
+    "sensor.airzone_iaq_pm10": "Partículas PM10",
+    "sensor.airzone_iaq_tvoc": "Compuestos orgánicos totales (TVOC)",
+    "sensor.airzone_iaq_pressure": "Presión atmosférica",
+    "sensor.airzone_iaq_index": "Índice de calidad del aire",
+    "sensor.airzone_iaq_score": "Puntuación de calidad del aire",
+    "sensor.airzone_iaq_ventmode": "Modo de ventilación IAQ"
+  },
+  "config": {
+    "step": {
+      "user": {
+        "title": "Airzone Control",
+        "description": "Conecta con tu Airzone Local API (webserver).",
+        "data": {
+          "host": "Host",
+          "port": "Puerto"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "No se puede conectar. Revisa host/puerto y que el webserver de Airzone esté accesible."
+    },
+    "abort": {
+      "already_configured": "Este host ya está configurado."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Airzone Control - Opciones",
+        "data": {
+          "scan_interval": "Intervalo de sondeo (segundos)"
+        }
+      }
+    }
+  },
+  "state": {
+    "off": "Apagado",
+    "on": "Encendido",
+    "Stop": "Paro",
+    "Ventilación": "Ventilación",
+    "Fan": "Ventilación",
+    "Heat": "Calor",
+    "Calor": "Calor",
+    "Cool": "Frío",
+    "Frío": "Frío",
+    "Auto": "Auto",
+    "Automatic": "Auto",
+    "Automático": "Automático",
+    "Dry": "Seco",
+    "Seco": "Seco"
+  },
+  "mode": {
+    "Stop": "Paro",
+    "Ventilación": "Ventilación",
+    "Calor": "Calor",
+    "Frío": "Frío",
+    "Automático": "Automático",
+    "Seco": "Seco"
+  },
+  "error": {
+    "Sin errores": "Sin errores",
+    "Error 3": "Elemento motorizado no conectado a la salida de motor.",
+    "Error 4": "Elemento motorizado bloqueado (comportamiento anómalo detectado).",
+    "Error 5": "Sonda de temperatura en circuito abierto (sensor de zona desconectado).",
+    "Error 6": "Sonda de temperatura en cortocircuito (sensor de zona en cortocircuito).",
+    "Error 7": "Elemento incompatible (equipo o módulo no soportado por el sistema).",
+    "Error 8": "Termostato Lite no encontrado (sin comunicación con el termostato de la zona).",
+    "F05-H": "Sonda de temperatura de batería de calefacción en circuito abierto.",
+    "F05-C": "Sonda de temperatura de batería de refrigeración en circuito abierto.",
+    "F06-H": "Sonda de temperatura de batería de calefacción en cortocircuito.",
+    "F06-C": "Sonda de temperatura de batería de refrigeración en cortocircuito.",
+    "IU error IU4": "Error IU IU4",
+    "Error IAQ1": "Error IAQ1",
+    "Error IAQ2": "Error IAQ2",
+    "Error IAQ3": "Error IAQ3",
+    "Error IAQ4": "Error IAQ4",
+    "Error 9": "Error 9",
+    "Error 11": "Error 11",
+    "Error 13": "Error 13",
+    "Error 15": "Error 15",
+    "Error 16": "Error 16",
+    "Error C09": "Error C09",
+    "Error C11": "Error C11",
+    "machineready_error": "Error de preparación de máquina",
+    "Low battery": "Batería baja",
+    "Window alarm": "Alarma de ventana",
+    "Presence alarm": "Alarma de presencia",
+    "Anti-freezing alarm": "Alarma antihielo",
+    "Active dew": "Rocío activo",
+    "Active dew protection": "Protección de rocío activa"
   }
 }

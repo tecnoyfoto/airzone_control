@@ -19,8 +19,7 @@
       "return_temp": { "name": "Temperatura de retorn" },
       "work_temp": { "name": "Temperatura de treball" },
       "cond_risk_master": { "name": "Risc de condensació (màster)" },
-
-      "air_demand": { "name": "Demanda d’aire" },
+      "air_demand": { "name": "Demanda d'aire" },
       "heat_demand": { "name": "Demanda de calor" },
       "cold_demand": { "name": "Demanda de fred" },
       "floor_demand": { "name": "Demanda de terra radiant" },
@@ -29,13 +28,12 @@
       "temperature": { "name": "Temperatura" },
       "open_window": { "name": "Finestra oberta" },
       "zone_profile": { "name": "Perfil de zona" },
-
       "iaq_index": { "name": "IAQ index" },
       "iaq_index_text": { "name": "IAQ index (text)" },
       "iaq_score": { "name": "IAQ score" },
       "aqi_pm_category": { "name": "AQI-PM (categoria)" },
       "aqi_pm_partial": { "name": "AQI-PM (parcial)" },
-      "air_quality_text": { "name": "Qualitat de l’aire" },
+      "air_quality_text": { "name": "Qualitat de l'aire" },
       "co2": { "name": "CO₂" },
       "tvoc": { "name": "TVOC" },
       "pm25": { "name": "PM2.5" },
@@ -46,11 +44,126 @@
       "iaq_home": { "name": "IAQ domèstic" },
       "iaq_home_text": { "name": "IAQ domèstic (text)" },
       "needs_ventilation": { "name": "Necessita ventilació" },
-
       "cloud_connected": { "name": "Núvol connectat" },
       "ws_version": { "name": "Versió del Webserver" },
       "transport": { "name": "Transport" },
-      "pressure": { "name": "Pressió (hPa)" }
+      "pressure": { "name": "Pressió (hPa)" },
+      "airzone_system_id": { "name": "ID del sistema" },
+      "airzone_system_firmware": { "name": "Versió de firmware" },
+      "airzone_system_mode": { "name": "Mode del sistema" },
+      "airzone_fan_speed": { "name": "Velocitat del ventilador" },
+      "airzone_system_sleep": { "name": "Mode repòs" },
+      "airzone_system_errors": { "name": "Errors del sistema" },
+      "airzone_system_units": { "name": "Unitats de temperatura" },
+      "airzone_low_battery": { "name": "Zones amb bateria baixa" },
+      "airzone_iaq_co2": { "name": "CO₂ (Qualitat de l'aire)" },
+      "airzone_iaq_pm25": { "name": "Partícules PM2.5" },
+      "airzone_iaq_pm10": { "name": "Partícules PM10" },
+      "airzone_iaq_tvoc": { "name": "Compostos orgànics totals (TVOC)" },
+      "airzone_iaq_pressure": { "name": "Pressió atmosfèrica" },
+      "airzone_iaq_index": { "name": "Índex de qualitat de l'aire" },
+      "airzone_iaq_score": { "name": "Puntuació de qualitat de l'aire" },
+      "airzone_iaq_ventmode": { "name": "Mode de ventilació IAQ" }
+    },
+    "sensor.airzone_system_id": "ID del sistema",
+    "sensor.airzone_system_firmware": "Versió de firmware",
+    "sensor.airzone_system_mode": "Mode del sistema",
+    "sensor.airzone_fan_speed": "Velocitat del ventilador",
+    "sensor.airzone_system_sleep": "Mode repòs",
+    "sensor.airzone_system_errors": "Errors del sistema",
+    "sensor.airzone_system_units": "Unitats de temperatura",
+    "sensor.airzone_low_battery": "Zones amb bateria baixa",
+    "sensor.airzone_iaq_co2": "CO₂ (Qualitat de l'aire)",
+    "sensor.airzone_iaq_pm25": "Partícules PM2.5",
+    "sensor.airzone_iaq_pm10": "Partícules PM10",
+    "sensor.airzone_iaq_tvoc": "Compostos orgànics totals (TVOC)",
+    "sensor.airzone_iaq_pressure": "Pressió atmosfèrica",
+    "sensor.airzone_iaq_index": "Índex de qualitat de l'aire",
+    "sensor.airzone_iaq_score": "Puntuació de qualitat de l'aire",
+    "sensor.airzone_iaq_ventmode": "Mode de ventilació IAQ"
+  },
+  "config": {
+    "step": {
+      "user": {
+        "title": "Airzone Control",
+        "description": "Connecta amb l'Airzone Local API (webserver).",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "No es pot connectar. Revisa el host/port i que el webserver d'Airzone sigui accessible."
+    },
+    "abort": {
+      "already_configured": "Aquest host ja està configurat."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Airzone Control - Opcions",
+        "data": {
+          "scan_interval": "Interval de sondeig (segons)"
+        }
+      }
+    }
+  },
+  "state": {
+    "off": "Apagat",
+    "on": "Encès",
+    "Stop": "Aturat",
+    "Ventilación": "Ventilació",
+    "Fan": "Ventilació",
+    "Heat": "Calefacció",
+    "Calor": "Calefacció",
+    "Cool": "Fred",
+    "Frío": "Fred",
+    "Auto": "Automàtic",
+    "Automatic": "Automàtic",
+    "Automático": "Automàtic",
+    "Dry": "Sec",
+    "Seco": "Sec"
+  },
+  "mode": {
+    "Stop": "Aturat",
+    "Ventilación": "Ventilació",
+    "Calor": "Calefacció",
+    "Frío": "Fred",
+    "Automático": "Automàtic",
+    "Seco": "Sec"
+  },
+  "error": {
+    "Sin errores": "Sense errors",
+    "Error 3": "Element motoritzat no connectat a la sortida de motor.",
+    "Error 4": "Element motoritzat bloquejat (s'ha detectat un comportament anòmal).",
+    "Error 5": "Sonda de temperatura en circuit obert (sensor de zona desconnectat).",
+    "Error 6": "Sonda de temperatura en curtcircuit (sensor de zona en curtcircuit).",
+    "Error 7": "Element incompatible (dispositiu o mòdul no compatible amb el sistema).",
+    "Error 8": "Termòstat Lite no trobat (sense comunicació amb el termòstat de la zona).",
+    "F05-H": "Sonda de temperatura de la bateria de calefacció en circuit obert.",
+    "F05-C": "Sonda de temperatura de la bateria de refrigeració en circuit obert.",
+    "F06-H": "Sonda de temperatura de la bateria de calefacció en curtcircuit.",
+    "F06-C": "Sonda de temperatura de la bateria de refrigeració en curtcircuit.",
+    "IU error IU4": "Error IU IU4",
+    "Error IAQ1": "Error IAQ1",
+    "Error IAQ2": "Error IAQ2",
+    "Error IAQ3": "Error IAQ3",
+    "Error IAQ4": "Error IAQ4",
+    "Error 9": "Error 9",
+    "Error 11": "Error 11",
+    "Error 13": "Error 13",
+    "Error 15": "Error 15",
+    "Error 16": "Error 16",
+    "Error C09": "Error C09",
+    "Error C11": "Error C11",
+    "machineready_error": "Error de preparació de màquina",
+    "Low battery": "Bateria baixa",
+    "Window alarm": "Alarma de finestra",
+    "Presence alarm": "Alarma de presència",
+    "Anti-freezing alarm": "Alarma d'anti-gel",
+    "Active dew": "Rosada activa",
+    "Active dew protection": "Protecció de rosada activa"
   }
 }

@@ -1,0 +1,169 @@
+{
+  "title": "Airzone Control",
+  "entity": {
+    "button": {
+      "hotel_off_all": { "name": "Alles uit (Hotel)" },
+      "hotel_on_all": { "name": "Alles aan (Hotel)" },
+      "hotel_copy_sp": { "name": "Setpoint naar alle zones kopiëren (Hotel)" }
+    },
+    "select": {
+      "mode": { "name": "Modus" },
+      "mode_global": { "name": "Modus (globaal)" },
+      "speed": { "name": "Snelheid" },
+      "ventilation": { "name": "Ventilatie" }
+    },
+    "sensor": {
+      "system_profile": { "name": "Systeemprofiel" },
+      "mc_connected": { "name": "MC verbonden" },
+      "outdoor_temp": { "name": "Buitentemperatuur" },
+      "return_temp": { "name": "Retourtemperatuur" },
+      "work_temp": { "name": "Bedrijfstemperatuur" },
+      "cond_risk_master": { "name": "Condensatierisico (master)" },
+      "air_demand": { "name": "Luchtvraag" },
+      "heat_demand": { "name": "Warmtevraag" },
+      "cold_demand": { "name": "Koelvraag" },
+      "floor_demand": { "name": "Vloerverwarmingsvraag" },
+      "errors": { "name": "Fouten" },
+      "humidity": { "name": "Vochtigheid" },
+      "temperature": { "name": "Temperatuur" },
+      "open_window": { "name": "Raam open" },
+      "zone_profile": { "name": "Zoneprofiel" },
+      "iaq_index": { "name": "IAQ-index" },
+      "iaq_index_text": { "name": "IAQ-index (tekst)" },
+      "iaq_score": { "name": "IAQ-score" },
+      "aqi_pm_category": { "name": "AQI-PM (categorie)" },
+      "aqi_pm_partial": { "name": "AQI-PM (deelwaarde)" },
+      "air_quality_text": { "name": "Luchtkwaliteit" },
+      "co2": { "name": "CO₂" },
+      "tvoc": { "name": "TVOC" },
+      "pm25": { "name": "PM2.5" },
+      "pm10": { "name": "PM10" },
+      "abs_humidity_gm3": { "name": "Absolute vochtigheid g/m³" },
+      "humidex_master": { "name": "Humidex (master)" },
+      "humidex_master_pct": { "name": "Humidex (master) %" },
+      "iaq_home": { "name": "Thuis IAQ" },
+      "iaq_home_text": { "name": "Thuis IAQ (tekst)" },
+      "needs_ventilation": { "name": "Ventilatie nodig" },
+      "cloud_connected": { "name": "Cloud verbonden" },
+      "ws_version": { "name": "Webserver-versie" },
+      "transport": { "name": "Transport" },
+      "pressure": { "name": "Druk (hPa)" },
+      "airzone_system_id": { "name": "Systeem-ID" },
+      "airzone_system_firmware": { "name": "Firmwareversie" },
+      "airzone_system_mode": { "name": "Systeemmodus" },
+      "airzone_fan_speed": { "name": "Ventilatorsnelheid" },
+      "airzone_system_sleep": { "name": "Slaapstand" },
+      "airzone_system_errors": { "name": "Systeemfouten" },
+      "airzone_system_units": { "name": "Temperatuureenheden" },
+      "airzone_low_battery": { "name": "Zones met lage batterij" },
+      "airzone_iaq_co2": { "name": "CO₂ (Luchtkwaliteit)" },
+      "airzone_iaq_pm25": { "name": "PM2.5-deeltjes" },
+      "airzone_iaq_pm10": { "name": "PM10-deeltjes" },
+      "airzone_iaq_tvoc": { "name": "Totale VOC" },
+      "airzone_iaq_pressure": { "name": "Luchtdruk" },
+      "airzone_iaq_index": { "name": "Luchtkwaliteitsindex" },
+      "airzone_iaq_score": { "name": "Luchtkwaliteitsscore" },
+      "airzone_iaq_ventmode": { "name": "IAQ-ventilatiemodus" }
+    },
+    "sensor.airzone_system_id": "Systeem-ID",
+    "sensor.airzone_system_firmware": "Firmwareversie",
+    "sensor.airzone_system_mode": "Systeemmodus",
+    "sensor.airzone_fan_speed": "Ventilatorsnelheid",
+    "sensor.airzone_system_sleep": "Slaapstand",
+    "sensor.airzone_system_errors": "Systeemfouten",
+    "sensor.airzone_system_units": "Temperatuureenheden",
+    "sensor.airzone_low_battery": "Zones met lage batterij",
+    "sensor.airzone_iaq_co2": "CO₂ (Luchtkwaliteit)",
+    "sensor.airzone_iaq_pm25": "PM2.5-deeltjes",
+    "sensor.airzone_iaq_pm10": "PM10-deeltjes",
+    "sensor.airzone_iaq_tvoc": "Totale VOC",
+    "sensor.airzone_iaq_pressure": "Luchtdruk",
+    "sensor.airzone_iaq_index": "Luchtkwaliteitsindex",
+    "sensor.airzone_iaq_score": "Luchtkwaliteitsscore",
+    "sensor.airzone_iaq_ventmode": "IAQ-ventilatiemodus"
+  },
+  "config": {
+    "step": {
+      "user": {
+        "title": "Airzone Control",
+        "description": "Verbind met je Airzone Local API (webserver).",
+        "data": {
+          "host": "Host",
+          "port": "Poort"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kan geen verbinding maken. Controleer host/poort en of de Airzone-webserver bereikbaar is."
+    },
+    "abort": {
+      "already_configured": "Deze host is al geconfigureerd."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Airzone Control - Opties",
+        "data": {
+          "scan_interval": "Scaninterval (seconden)"
+        }
+      }
+    }
+  },
+  "state": {
+    "off": "Uit",
+    "on": "Aan",
+    "Stop": "Stop",
+    "Ventilación": "Ventilatie",
+    "Fan": "Ventilatie",
+    "Heat": "Verwarmen",
+    "Calor": "Verwarmen",
+    "Cool": "Koelen",
+    "Frío": "Koelen",
+    "Auto": "Auto",
+    "Automatic": "Auto",
+    "Automático": "Auto",
+    "Dry": "Droog",
+    "Seco": "Droog"
+  },
+  "mode": {
+    "Stop": "Stop",
+    "Ventilación": "Ventilatie",
+    "Calor": "Verwarmen",
+    "Frío": "Koelen",
+    "Automático": "Auto",
+    "Seco": "Droog"
+  },
+  "error": {
+    "Sin errores": "Geen fouten",
+    "Error 3": "Gemotoriseerd element niet aangesloten op motoruitgang.",
+    "Error 4": "Gemotoriseerd element geblokkeerd (abnormaal gedrag gedetecteerd).",
+    "Error 5": "Temperatuursensor open circuit (zonesensor losgekoppeld).",
+    "Error 6": "Temperatuursensor kortsluiting (zonesensor kortgesloten).",
+    "Error 7": "Onverenigbaar element (apparaat of module niet door het systeem ondersteund).",
+    "Error 8": "Lite-thermostaat niet gevonden (geen communicatie met de zonethermostaat).",
+    "F05-H": "Temperatuursensor verwarmingsbatterij open circuit.",
+    "F05-C": "Temperatuursensor koelbatterij open circuit.",
+    "F06-H": "Temperatuursensor verwarmingsbatterij kortsluiting.",
+    "F06-C": "Temperatuursensor koelbatterij kortsluiting.",
+    "IU error IU4": "IU-fout IU4",
+    "Error IAQ1": "IAQ-fout 1",
+    "Error IAQ2": "IAQ-fout 2",
+    "Error IAQ3": "IAQ-fout 3",
+    "Error IAQ4": "IAQ-fout 4",
+    "Error 9": "Fout 9",
+    "Error 11": "Fout 11",
+    "Error 13": "Fout 13",
+    "Error 15": "Fout 15",
+    "Error 16": "Fout 16",
+    "Error C09": "Fout C09",
+    "Error C11": "Fout C11",
+    "machineready_error": "Machine-gereedheidsfout",
+    "Low battery": "Lage batterij",
+    "Window alarm": "Raamalarm",
+    "Presence alarm": "Aanwezigheidsalarm",
+    "Anti-freezing alarm": "Antivriesalarm",
+    "Active dew": "Actieve dauw",
+    "Active dew protection": "Actieve dauwbescherming"
+  }
+}
