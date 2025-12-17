@@ -9,6 +9,7 @@ DEFAULT_HOST = ""
 CONF_HOST = "host"
 CONF_PORT = "port"
 CONF_SCAN_INTERVAL = "scan_interval"
+CONF_GROUPS = "groups"  # Grupos/Zonas lógicas definidas por el usuario
 
 # Intervalo de sondeo por defecto (segundos). Cambiable en Opciones.
 DEFAULT_SCAN_INTERVAL = 5

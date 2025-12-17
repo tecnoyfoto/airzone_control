@@ -2,68 +2,184 @@
   "title": "Airzone Control",
   "entity": {
     "button": {
-      "hotel_off_all": { "name": "Turn off all (Hotel)" },
-      "hotel_on_all": { "name": "Turn on all (Hotel)" },
-      "hotel_copy_sp": { "name": "Copy setpoint to all (Hotel)" }
+      "hotel_off_all": {
+        "name": "Turn off all (Hotel)"
+      },
+      "hotel_on_all": {
+        "name": "Turn on all (Hotel)"
+      },
+      "hotel_copy_sp": {
+        "name": "Copy setpoint to all (Hotel)"
+      }
     },
     "select": {
-      "mode": { "name": "Mode" },
-      "mode_global": { "name": "Mode (global)" },
-      "speed": { "name": "Speed" },
-      "ventilation": { "name": "Ventilation" }
+      "mode": {
+        "name": "Mode"
+      },
+      "mode_global": {
+        "name": "Mode (global)"
+      },
+      "speed": {
+        "name": "Speed"
+      },
+      "ventilation": {
+        "name": "Ventilation"
+      }
     },
     "sensor": {
-      "system_profile": { "name": "System profile" },
-      "mc_connected": { "name": "MC connected" },
-      "outdoor_temp": { "name": "Outdoor temperature" },
-      "return_temp": { "name": "Return temperature" },
-      "work_temp": { "name": "Operating temperature" },
-      "cond_risk_master": { "name": "Condensation risk (master)" },
-      "air_demand": { "name": "Air demand" },
-      "heat_demand": { "name": "Heat demand" },
-      "cold_demand": { "name": "Cooling demand" },
-      "floor_demand": { "name": "Radiant floor demand" },
-      "errors": { "name": "Errors" },
-      "humidity": { "name": "Humidity" },
-      "temperature": { "name": "Temperature" },
-      "open_window": { "name": "Open window" },
-      "zone_profile": { "name": "Zone profile" },
-      "iaq_index": { "name": "IAQ index" },
-      "iaq_index_text": { "name": "IAQ index (text)" },
-      "iaq_score": { "name": "IAQ score" },
-      "aqi_pm_category": { "name": "AQI-PM (category)" },
-      "aqi_pm_partial": { "name": "AQI-PM (partial)" },
-      "air_quality_text": { "name": "Air quality" },
-      "co2": { "name": "CO₂" },
-      "tvoc": { "name": "TVOC" },
-      "pm25": { "name": "PM2.5" },
-      "pm10": { "name": "PM10" },
-      "abs_humidity_gm3": { "name": "Absolute humidity g/m³" },
-      "humidex_master": { "name": "Humidex (master)" },
-      "humidex_master_pct": { "name": "Humidex (master) %" },
-      "iaq_home": { "name": "Home IAQ" },
-      "iaq_home_text": { "name": "Home IAQ (text)" },
-      "needs_ventilation": { "name": "Needs ventilation" },
-      "cloud_connected": { "name": "Cloud connected" },
-      "ws_version": { "name": "Webserver version" },
-      "transport": { "name": "Transport" },
-      "pressure": { "name": "Pressure (hPa)" },
-      "airzone_system_id": { "name": "System ID" },
-      "airzone_system_firmware": { "name": "Firmware version" },
-      "airzone_system_mode": { "name": "System mode" },
-      "airzone_fan_speed": { "name": "Fan speed" },
-      "airzone_system_sleep": { "name": "Sleep mode" },
-      "airzone_system_errors": { "name": "System errors" },
-      "airzone_system_units": { "name": "Temperature units" },
-      "airzone_low_battery": { "name": "Zones with low battery" },
-      "airzone_iaq_co2": { "name": "CO₂ (Air quality)" },
-      "airzone_iaq_pm25": { "name": "PM2.5 particles" },
-      "airzone_iaq_pm10": { "name": "PM10 particles" },
-      "airzone_iaq_tvoc": { "name": "Total VOC" },
-      "airzone_iaq_pressure": { "name": "Air pressure" },
-      "airzone_iaq_index": { "name": "Air quality index" },
-      "airzone_iaq_score": { "name": "Air quality score" },
-      "airzone_iaq_ventmode": { "name": "IAQ ventilation mode" }
+      "system_profile": {
+        "name": "System profile"
+      },
+      "mc_connected": {
+        "name": "MC connected"
+      },
+      "outdoor_temp": {
+        "name": "Outdoor temperature"
+      },
+      "return_temp": {
+        "name": "Return temperature"
+      },
+      "work_temp": {
+        "name": "Operating temperature"
+      },
+      "cond_risk_master": {
+        "name": "Condensation risk (master)"
+      },
+      "air_demand": {
+        "name": "Air demand"
+      },
+      "heat_demand": {
+        "name": "Heat demand"
+      },
+      "cold_demand": {
+        "name": "Cooling demand"
+      },
+      "floor_demand": {
+        "name": "Radiant floor demand"
+      },
+      "errors": {
+        "name": "Errors"
+      },
+      "humidity": {
+        "name": "Humidity"
+      },
+      "temperature": {
+        "name": "Temperature"
+      },
+      "open_window": {
+        "name": "Open window"
+      },
+      "zone_profile": {
+        "name": "Zone profile"
+      },
+      "iaq_index": {
+        "name": "IAQ index"
+      },
+      "iaq_index_text": {
+        "name": "IAQ index (text)"
+      },
+      "iaq_score": {
+        "name": "IAQ score"
+      },
+      "aqi_pm_category": {
+        "name": "AQI-PM (category)"
+      },
+      "aqi_pm_partial": {
+        "name": "AQI-PM (partial)"
+      },
+      "air_quality_text": {
+        "name": "Air quality"
+      },
+      "co2": {
+        "name": "CO₂"
+      },
+      "tvoc": {
+        "name": "TVOC"
+      },
+      "pm25": {
+        "name": "PM2.5"
+      },
+      "pm10": {
+        "name": "PM10"
+      },
+      "abs_humidity_gm3": {
+        "name": "Absolute humidity g/m³"
+      },
+      "humidex_master": {
+        "name": "Humidex (master)"
+      },
+      "humidex_master_pct": {
+        "name": "Humidex (master) %"
+      },
+      "iaq_home": {
+        "name": "Home IAQ"
+      },
+      "iaq_home_text": {
+        "name": "Home IAQ (text)"
+      },
+      "needs_ventilation": {
+        "name": "Needs ventilation"
+      },
+      "cloud_connected": {
+        "name": "Cloud connected"
+      },
+      "ws_version": {
+        "name": "Webserver version"
+      },
+      "transport": {
+        "name": "Transport"
+      },
+      "pressure": {
+        "name": "Pressure (hPa)"
+      },
+      "airzone_system_id": {
+        "name": "System ID"
+      },
+      "airzone_system_firmware": {
+        "name": "Firmware version"
+      },
+      "airzone_system_mode": {
+        "name": "System mode"
+      },
+      "airzone_fan_speed": {
+        "name": "Fan speed"
+      },
+      "airzone_system_sleep": {
+        "name": "Sleep mode"
+      },
+      "airzone_system_errors": {
+        "name": "System errors"
+      },
+      "airzone_system_units": {
+        "name": "Temperature units"
+      },
+      "airzone_low_battery": {
+        "name": "Zones with low battery"
+      },
+      "airzone_iaq_co2": {
+        "name": "CO₂ (Air quality)"
+      },
+      "airzone_iaq_pm25": {
+        "name": "PM2.5 particles"
+      },
+      "airzone_iaq_pm10": {
+        "name": "PM10 particles"
+      },
+      "airzone_iaq_tvoc": {
+        "name": "Total VOC"
+      },
+      "airzone_iaq_pressure": {
+        "name": "Air pressure"
+      },
+      "airzone_iaq_index": {
+        "name": "Air quality index"
+      },
+      "airzone_iaq_score": {
+        "name": "Air quality score"
+      },
+      "airzone_iaq_ventmode": {
+        "name": "IAQ ventilation mode"
+      }
     },
     "sensor.airzone_system_id": "System ID",
     "sensor.airzone_system_firmware": "Firmware version",
@@ -91,10 +207,18 @@
           "host": "Host",
           "port": "Port"
         }
+      },
+      "prefix": {
+        "title": "Airzone Control - API prefix",
+        "description": "Select the API prefix if autodetection fails.",
+        "data": {
+          "api_prefix": "API prefix"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Cannot connect. Please check host/port and that the Airzone webserver is reachable."
+      "cannot_connect": "Cannot connect. Please check host/port and that the Airzone webserver is reachable.",
+      "no_host": "Please enter a host."
     },
     "abort": {
       "already_configured": "This host is already configured."
@@ -105,9 +229,31 @@
       "init": {
         "title": "Airzone Control - Options",
         "data": {
-          "scan_interval": "Scan interval (seconds)"
-        }
+          "scan_interval": "Scan interval (seconds)",
+          "group_1_name": "Group 1 name",
+          "group_1_zones": "Group 1 zones",
+          "group_2_name": "Group 2 name",
+          "group_2_zones": "Group 2 zones",
+          "group_3_name": "Group 3 name",
+          "group_3_zones": "Group 3 zones",
+          "group_4_name": "Group 4 name",
+          "group_4_zones": "Group 4 zones",
+          "group_5_name": "Group 5 name",
+          "group_5_zones": "Group 5 zones",
+          "group_6_name": "Group 6 name",
+          "group_6_zones": "Group 6 zones",
+          "group_7_name": "Group 7 name",
+          "group_7_zones": "Group 7 zones",
+          "group_8_name": "Group 8 name",
+          "group_8_zones": "Group 8 zones",
+          "groups_json": "Groups (advanced JSON)"
+        },
+        "description": "Create up to 8 logical groups using names and zone selection. For larger installations, use the advanced JSON field (it overrides the UI groups)."
       }
+    },
+    "error": {
+      "invalid_scan_interval": "Invalid scan interval. Use a value between 2 and 300 seconds.",
+      "invalid_json": "Invalid JSON. It must be a list of group objects."
     }
   },
   "state": {

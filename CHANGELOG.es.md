@@ -2,6 +2,18 @@
 
 # Registro de cambios
 
+## [1.6.0] - 2025-12-17
+
+- Añadido el **termostato maestro** (`climate`) por sistema, para controlar todas las zonas desde una sola entidad.
+- Añadidos **termostatos de grupo** (`climate`) para controlar varias zonas como una sola.
+- Añadida **UI en Opciones** para crear grupos mediante:
+  - Nombre de grupo + selección de zonas (lista de checks)
+  - Modo JSON avanzado sin límite práctico de grupos
+- Los grupos ya soportan **encender/apagar** a nivel de grupo.
+- Al guardar opciones, la integración hace **recarga automática**, y los nuevos grupos aparecen sin reiniciar Home Assistant.
+- Mejora de traducciones para configuración y opciones.
+
+
 ## [1.5.1] - 2025-10-11
 
 ### 🌐 Internacionalización (i18n)

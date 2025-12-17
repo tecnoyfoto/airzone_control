@@ -7,7 +7,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, DEFAULT_HOST, DEFAULT_PORT, DEFAULT_SCAN_INTERVAL
+from .const import (
+    DOMAIN,
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    DEFAULT_SCAN_INTERVAL,
+    CONF_SCAN_INTERVAL,
+)
 from .coordinator import AirzoneCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -16,18 +22,28 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
-    Platform.CLIMATE,     # <- faltaba
+    Platform.CLIMATE,
     Platform.SELECT,
-    Platform.SWITCH,      # <- faltaba
-    Platform.BUTTON,      # <- faltaba
+    Platform.SWITCH,
+    Platform.BUTTON,
 ]
+
+
+async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Recargar la integración cuando cambian options/data (p. ej., grupos)."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Cargar integración Airzone Control desde una config entry."""
     host = entry.data.get("host", DEFAULT_HOST)
     port = entry.data.get("port", DEFAULT_PORT)
-    scan = entry.data.get("scan_interval", DEFAULT_SCAN_INTERVAL)
+
+    # El scan_interval se guarda en options; hacemos fallback a data por compatibilidad
+    scan = entry.options.get(
+        CONF_SCAN_INTERVAL, entry.data.get("scan_interval", DEFAULT_SCAN_INTERVAL)
+    )
+
     api_prefix = entry.data.get("api_prefix")  # opcional
 
     coordinator = AirzoneCoordinator(
@@ -46,6 +62,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
     }
+
+    # Si el usuario cambia opciones (por ejemplo, crea/edita grupos), recargamos la entry
+    # para que se creen/eliminar entidades automáticamente sin reiniciar Home Assistant.
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True

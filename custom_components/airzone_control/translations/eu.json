@@ -2,74 +2,185 @@
   "title": "Airzone Control",
   "entity": {
     "button": {
-      "hotel_off_all": { "name": "Guztia itzali (Hotela)" },
-      "hotel_on_all": { "name": "Guztia piztu (Hotela)" },
-      "hotel_copy_sp": { "name": "Ezarpen-balioa guztietara kopiatu (Hotela)" }
+      "hotel_off_all": {
+        "name": "Guztia itzali (Hotela)"
+      },
+      "hotel_on_all": {
+        "name": "Guztia piztu (Hotela)"
+      },
+      "hotel_copy_sp": {
+        "name": "Ezarpen-balioa guztietara kopiatu (Hotela)"
+      }
     },
     "select": {
-      "mode": { "name": "Modua" },
-      "mode_global": { "name": "Modua (orokorra)" },
-      "speed": { "name": "Abiadura" },
-      "ventilation": { "name": "Aireztapena" }
+      "mode": {
+        "name": "Modua"
+      },
+      "mode_global": {
+        "name": "Modua (orokorra)"
+      },
+      "speed": {
+        "name": "Abiadura"
+      },
+      "ventilation": {
+        "name": "Aireztapena"
+      }
     },
     "sensor": {
-      "system_profile": { "name": "Sistemaren profila" },
-      "mc_connected": { "name": "MC konektatuta" },
-      "outdoor_temp": { "name": "Kanpoko tenperatura" },
-      "return_temp": { "name": "Itzulera-tenperatura" },
-      "work_temp": { "name": "Funtzionamendu-tenperatura" },
-      "cond_risk_master": { "name": "Kondentsazio arriskua (nagusia)" },
-
-      "air_demand": { "name": "Aire-eskaria" },
-      "heat_demand": { "name": "Berokuntza-eskaria" },
-      "cold_demand": { "name": "Hozte-eskaria" },
-      "floor_demand": { "name": "Zoru erradiantaren eskaria" },
-      "errors": { "name": "Akatsak" },
-      "humidity": { "name": "Hezetasuna" },
-      "temperature": { "name": "Tenperatura" },
-      "open_window": { "name": "Leihoa irekita" },
-      "zone_profile": { "name": "Zonaren profila" },
-
-      "iaq_index": { "name": "IAQ indizea" },
-      "iaq_index_text": { "name": "IAQ indizea (testua)" },
-      "iaq_score": { "name": "IAQ puntuazioa" },
-      "aqi_pm_category": { "name": "AQI-PM (kategoria)" },
-      "aqi_pm_partial": { "name": "AQI-PM (partziala)" },
-      "air_quality_text": { "name": "Airearen kalitatea" },
-      "co2": { "name": "CO₂" },
-      "tvoc": { "name": "TVOC" },
-      "pm25": { "name": "PM2.5" },
-      "pm10": { "name": "PM10" },
-      "abs_humidity_gm3": { "name": "Hezetasun absolutua g/m³" },
-      "humidex_master": { "name": "Humidex (nagusia)" },
-      "humidex_master_pct": { "name": "Humidex (nagusia) %" },
-      "iaq_home": { "name": "Etxeko IAQ" },
-      "iaq_home_text": { "name": "Etxeko IAQ (testua)" },
-      "needs_ventilation": { "name": "Aireztapena behar du" },
-
-      "cloud_connected": { "name": "Hodeira konektatuta" },
-      "ws_version": { "name": "Web zerbitzariaren bertsioa" },
-      "transport": { "name": "Garraioa" },
-      "pressure": { "name": "Presioa (hPa)" },
-
-      "airzone_system_id": { "name": "Sistemaren ID" },
-      "airzone_system_firmware": { "name": "Firmware bertsioa" },
-      "airzone_system_mode": { "name": "Sistemaren modua" },
-      "airzone_fan_speed": { "name": "Haizagailuaren abiadura" },
-      "airzone_system_sleep": { "name": "Lo modua" },
-      "airzone_system_errors": { "name": "Sistemaren akatsak" },
-      "airzone_system_units": { "name": "Tenperatura-unitateak" },
-      "airzone_low_battery": { "name": "Bateria baxua duten guneak" },
-      "airzone_iaq_co2": { "name": "CO₂ (Airearen kalitatea)" },
-      "airzone_iaq_pm25": { "name": "PM2.5 partikulak" },
-      "airzone_iaq_pm10": { "name": "PM10 partikulak" },
-      "airzone_iaq_tvoc": { "name": "Guztizko VOC" },
-      "airzone_iaq_pressure": { "name": "Aire-presioa" },
-      "airzone_iaq_index": { "name": "Airearen kalitate-indizea" },
-      "airzone_iaq_score": { "name": "Airearen kalitate-puntuazioa" },
-      "airzone_iaq_ventmode": { "name": "IAQ aireztapen modua" }
+      "system_profile": {
+        "name": "Sistemaren profila"
+      },
+      "mc_connected": {
+        "name": "MC konektatuta"
+      },
+      "outdoor_temp": {
+        "name": "Kanpoko tenperatura"
+      },
+      "return_temp": {
+        "name": "Itzulera-tenperatura"
+      },
+      "work_temp": {
+        "name": "Funtzionamendu-tenperatura"
+      },
+      "cond_risk_master": {
+        "name": "Kondentsazio arriskua (nagusia)"
+      },
+      "air_demand": {
+        "name": "Aire-eskaria"
+      },
+      "heat_demand": {
+        "name": "Berokuntza-eskaria"
+      },
+      "cold_demand": {
+        "name": "Hozte-eskaria"
+      },
+      "floor_demand": {
+        "name": "Zoru erradiantaren eskaria"
+      },
+      "errors": {
+        "name": "Akatsak"
+      },
+      "humidity": {
+        "name": "Hezetasuna"
+      },
+      "temperature": {
+        "name": "Tenperatura"
+      },
+      "open_window": {
+        "name": "Leihoa irekita"
+      },
+      "zone_profile": {
+        "name": "Zonaren profila"
+      },
+      "iaq_index": {
+        "name": "IAQ indizea"
+      },
+      "iaq_index_text": {
+        "name": "IAQ indizea (testua)"
+      },
+      "iaq_score": {
+        "name": "IAQ puntuazioa"
+      },
+      "aqi_pm_category": {
+        "name": "AQI-PM (kategoria)"
+      },
+      "aqi_pm_partial": {
+        "name": "AQI-PM (partziala)"
+      },
+      "air_quality_text": {
+        "name": "Airearen kalitatea"
+      },
+      "co2": {
+        "name": "CO₂"
+      },
+      "tvoc": {
+        "name": "TVOC"
+      },
+      "pm25": {
+        "name": "PM2.5"
+      },
+      "pm10": {
+        "name": "PM10"
+      },
+      "abs_humidity_gm3": {
+        "name": "Hezetasun absolutua g/m³"
+      },
+      "humidex_master": {
+        "name": "Humidex (nagusia)"
+      },
+      "humidex_master_pct": {
+        "name": "Humidex (nagusia) %"
+      },
+      "iaq_home": {
+        "name": "Etxeko IAQ"
+      },
+      "iaq_home_text": {
+        "name": "Etxeko IAQ (testua)"
+      },
+      "needs_ventilation": {
+        "name": "Aireztapena behar du"
+      },
+      "cloud_connected": {
+        "name": "Hodeira konektatuta"
+      },
+      "ws_version": {
+        "name": "Web zerbitzariaren bertsioa"
+      },
+      "transport": {
+        "name": "Garraioa"
+      },
+      "pressure": {
+        "name": "Presioa (hPa)"
+      },
+      "airzone_system_id": {
+        "name": "Sistemaren ID"
+      },
+      "airzone_system_firmware": {
+        "name": "Firmware bertsioa"
+      },
+      "airzone_system_mode": {
+        "name": "Sistemaren modua"
+      },
+      "airzone_fan_speed": {
+        "name": "Haizagailuaren abiadura"
+      },
+      "airzone_system_sleep": {
+        "name": "Lo modua"
+      },
+      "airzone_system_errors": {
+        "name": "Sistemaren akatsak"
+      },
+      "airzone_system_units": {
+        "name": "Tenperatura-unitateak"
+      },
+      "airzone_low_battery": {
+        "name": "Bateria baxua duten guneak"
+      },
+      "airzone_iaq_co2": {
+        "name": "CO₂ (Airearen kalitatea)"
+      },
+      "airzone_iaq_pm25": {
+        "name": "PM2.5 partikulak"
+      },
+      "airzone_iaq_pm10": {
+        "name": "PM10 partikulak"
+      },
+      "airzone_iaq_tvoc": {
+        "name": "Guztizko VOC"
+      },
+      "airzone_iaq_pressure": {
+        "name": "Aire-presioa"
+      },
+      "airzone_iaq_index": {
+        "name": "Airearen kalitate-indizea"
+      },
+      "airzone_iaq_score": {
+        "name": "Airearen kalitate-puntuazioa"
+      },
+      "airzone_iaq_ventmode": {
+        "name": "IAQ aireztapen modua"
+      }
     },
-
     "sensor.airzone_system_id": "Sistemaren ID",
     "sensor.airzone_system_firmware": "Firmware bertsioa",
     "sensor.airzone_system_mode": "Sistemaren modua",
@@ -87,7 +198,6 @@
     "sensor.airzone_iaq_score": "Airearen kalitate-puntuazioa",
     "sensor.airzone_iaq_ventmode": "IAQ aireztapen modua"
   },
-
   "config": {
     "step": {
       "user": {
@@ -97,27 +207,55 @@
           "host": "Host",
           "port": "Portua"
         }
+      },
+      "prefix": {
+        "title": "Airzone Control - API aurrizkia",
+        "description": "Hautatu APIaren aurrizkia autodetekzioak huts egiten badu.",
+        "data": {
+          "api_prefix": "API aurrizkia"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Ezin da konektatu. Egiaztatu host/portua eta Airzone web zerbitzaria eskuragarri dagoela."
+      "cannot_connect": "Ezin da konektatu. Egiaztatu host/portua eta Airzone web zerbitzaria eskuragarri dagoela.",
+      "no_host": "Sartu host bat."
     },
     "abort": {
       "already_configured": "Host hau dagoeneko konfiguratuta dago."
     }
   },
-
   "options": {
     "step": {
       "init": {
         "title": "Airzone Control - Aukerak",
         "data": {
-          "scan_interval": "Eskaneatze-tartea (segunduak)"
-        }
+          "scan_interval": "Eskaneatze-tartea (segundoak)",
+          "group_1_name": "1. taldea - Izena",
+          "group_1_zones": "1. taldea - Zonak",
+          "group_2_name": "2. taldea - Izena",
+          "group_2_zones": "2. taldea - Zonak",
+          "group_3_name": "3. taldea - Izena",
+          "group_3_zones": "3. taldea - Zonak",
+          "group_4_name": "4. taldea - Izena",
+          "group_4_zones": "4. taldea - Zonak",
+          "group_5_name": "5. taldea - Izena",
+          "group_5_zones": "5. taldea - Zonak",
+          "group_6_name": "6. taldea - Izena",
+          "group_6_zones": "6. taldea - Zonak",
+          "group_7_name": "7. taldea - Izena",
+          "group_7_zones": "7. taldea - Zonak",
+          "group_8_name": "8. taldea - Izena",
+          "group_8_zones": "8. taldea - Zonak",
+          "groups_json": "Taldeak (JSON aurreratua)"
+        },
+        "description": "Sortu gehienez 8 talde logiko izen batekin eta zonak hautatuz. Instalazio handietarako, erabili JSON aurreratua (UI-ko taldeek baino lehentasun handiagoa du)."
       }
+    },
+    "error": {
+      "invalid_scan_interval": "Eskaneatze-tarte baliogabea. Erabili 2 eta 300 segundo arteko balioa.",
+      "invalid_json": "JSON baliogabea. Talde-objektuen zerrenda izan behar du."
     }
   },
-
   "state": {
     "off": "Itzalita",
     "on": "Piztuta",
@@ -134,7 +272,6 @@
     "Dry": "Lehorra",
     "Seco": "Lehorra"
   },
-
   "mode": {
     "Stop": "Gelditu",
     "Ventilación": "Aireztapena",
@@ -143,7 +280,6 @@
     "Automático": "Auto",
     "Seco": "Lehorra"
   },
-
   "error": {
     "Sin errores": "Akatsik ez",
     "Error 3": "Elementu motorizatua motor irteerara konektatu gabe.",

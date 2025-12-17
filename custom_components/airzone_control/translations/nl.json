@@ -2,68 +2,184 @@
   "title": "Airzone Control",
   "entity": {
     "button": {
-      "hotel_off_all": { "name": "Alles uit (Hotel)" },
-      "hotel_on_all": { "name": "Alles aan (Hotel)" },
-      "hotel_copy_sp": { "name": "Setpoint naar alle zones kopiëren (Hotel)" }
+      "hotel_off_all": {
+        "name": "Alles uit (Hotel)"
+      },
+      "hotel_on_all": {
+        "name": "Alles aan (Hotel)"
+      },
+      "hotel_copy_sp": {
+        "name": "Setpoint naar alle zones kopiëren (Hotel)"
+      }
     },
     "select": {
-      "mode": { "name": "Modus" },
-      "mode_global": { "name": "Modus (globaal)" },
-      "speed": { "name": "Snelheid" },
-      "ventilation": { "name": "Ventilatie" }
+      "mode": {
+        "name": "Modus"
+      },
+      "mode_global": {
+        "name": "Modus (globaal)"
+      },
+      "speed": {
+        "name": "Snelheid"
+      },
+      "ventilation": {
+        "name": "Ventilatie"
+      }
     },
     "sensor": {
-      "system_profile": { "name": "Systeemprofiel" },
-      "mc_connected": { "name": "MC verbonden" },
-      "outdoor_temp": { "name": "Buitentemperatuur" },
-      "return_temp": { "name": "Retourtemperatuur" },
-      "work_temp": { "name": "Bedrijfstemperatuur" },
-      "cond_risk_master": { "name": "Condensatierisico (master)" },
-      "air_demand": { "name": "Luchtvraag" },
-      "heat_demand": { "name": "Warmtevraag" },
-      "cold_demand": { "name": "Koelvraag" },
-      "floor_demand": { "name": "Vloerverwarmingsvraag" },
-      "errors": { "name": "Fouten" },
-      "humidity": { "name": "Vochtigheid" },
-      "temperature": { "name": "Temperatuur" },
-      "open_window": { "name": "Raam open" },
-      "zone_profile": { "name": "Zoneprofiel" },
-      "iaq_index": { "name": "IAQ-index" },
-      "iaq_index_text": { "name": "IAQ-index (tekst)" },
-      "iaq_score": { "name": "IAQ-score" },
-      "aqi_pm_category": { "name": "AQI-PM (categorie)" },
-      "aqi_pm_partial": { "name": "AQI-PM (deelwaarde)" },
-      "air_quality_text": { "name": "Luchtkwaliteit" },
-      "co2": { "name": "CO₂" },
-      "tvoc": { "name": "TVOC" },
-      "pm25": { "name": "PM2.5" },
-      "pm10": { "name": "PM10" },
-      "abs_humidity_gm3": { "name": "Absolute vochtigheid g/m³" },
-      "humidex_master": { "name": "Humidex (master)" },
-      "humidex_master_pct": { "name": "Humidex (master) %" },
-      "iaq_home": { "name": "Thuis IAQ" },
-      "iaq_home_text": { "name": "Thuis IAQ (tekst)" },
-      "needs_ventilation": { "name": "Ventilatie nodig" },
-      "cloud_connected": { "name": "Cloud verbonden" },
-      "ws_version": { "name": "Webserver-versie" },
-      "transport": { "name": "Transport" },
-      "pressure": { "name": "Druk (hPa)" },
-      "airzone_system_id": { "name": "Systeem-ID" },
-      "airzone_system_firmware": { "name": "Firmwareversie" },
-      "airzone_system_mode": { "name": "Systeemmodus" },
-      "airzone_fan_speed": { "name": "Ventilatorsnelheid" },
-      "airzone_system_sleep": { "name": "Slaapstand" },
-      "airzone_system_errors": { "name": "Systeemfouten" },
-      "airzone_system_units": { "name": "Temperatuureenheden" },
-      "airzone_low_battery": { "name": "Zones met lage batterij" },
-      "airzone_iaq_co2": { "name": "CO₂ (Luchtkwaliteit)" },
-      "airzone_iaq_pm25": { "name": "PM2.5-deeltjes" },
-      "airzone_iaq_pm10": { "name": "PM10-deeltjes" },
-      "airzone_iaq_tvoc": { "name": "Totale VOC" },
-      "airzone_iaq_pressure": { "name": "Luchtdruk" },
-      "airzone_iaq_index": { "name": "Luchtkwaliteitsindex" },
-      "airzone_iaq_score": { "name": "Luchtkwaliteitsscore" },
-      "airzone_iaq_ventmode": { "name": "IAQ-ventilatiemodus" }
+      "system_profile": {
+        "name": "Systeemprofiel"
+      },
+      "mc_connected": {
+        "name": "MC verbonden"
+      },
+      "outdoor_temp": {
+        "name": "Buitentemperatuur"
+      },
+      "return_temp": {
+        "name": "Retourtemperatuur"
+      },
+      "work_temp": {
+        "name": "Bedrijfstemperatuur"
+      },
+      "cond_risk_master": {
+        "name": "Condensatierisico (master)"
+      },
+      "air_demand": {
+        "name": "Luchtvraag"
+      },
+      "heat_demand": {
+        "name": "Warmtevraag"
+      },
+      "cold_demand": {
+        "name": "Koelvraag"
+      },
+      "floor_demand": {
+        "name": "Vloerverwarmingsvraag"
+      },
+      "errors": {
+        "name": "Fouten"
+      },
+      "humidity": {
+        "name": "Vochtigheid"
+      },
+      "temperature": {
+        "name": "Temperatuur"
+      },
+      "open_window": {
+        "name": "Raam open"
+      },
+      "zone_profile": {
+        "name": "Zoneprofiel"
+      },
+      "iaq_index": {
+        "name": "IAQ-index"
+      },
+      "iaq_index_text": {
+        "name": "IAQ-index (tekst)"
+      },
+      "iaq_score": {
+        "name": "IAQ-score"
+      },
+      "aqi_pm_category": {
+        "name": "AQI-PM (categorie)"
+      },
+      "aqi_pm_partial": {
+        "name": "AQI-PM (deelwaarde)"
+      },
+      "air_quality_text": {
+        "name": "Luchtkwaliteit"
+      },
+      "co2": {
+        "name": "CO₂"
+      },
+      "tvoc": {
+        "name": "TVOC"
+      },
+      "pm25": {
+        "name": "PM2.5"
+      },
+      "pm10": {
+        "name": "PM10"
+      },
+      "abs_humidity_gm3": {
+        "name": "Absolute vochtigheid g/m³"
+      },
+      "humidex_master": {
+        "name": "Humidex (master)"
+      },
+      "humidex_master_pct": {
+        "name": "Humidex (master) %"
+      },
+      "iaq_home": {
+        "name": "Thuis IAQ"
+      },
+      "iaq_home_text": {
+        "name": "Thuis IAQ (tekst)"
+      },
+      "needs_ventilation": {
+        "name": "Ventilatie nodig"
+      },
+      "cloud_connected": {
+        "name": "Cloud verbonden"
+      },
+      "ws_version": {
+        "name": "Webserver-versie"
+      },
+      "transport": {
+        "name": "Transport"
+      },
+      "pressure": {
+        "name": "Druk (hPa)"
+      },
+      "airzone_system_id": {
+        "name": "Systeem-ID"
+      },
+      "airzone_system_firmware": {
+        "name": "Firmwareversie"
+      },
+      "airzone_system_mode": {
+        "name": "Systeemmodus"
+      },
+      "airzone_fan_speed": {
+        "name": "Ventilatorsnelheid"
+      },
+      "airzone_system_sleep": {
+        "name": "Slaapstand"
+      },
+      "airzone_system_errors": {
+        "name": "Systeemfouten"
+      },
+      "airzone_system_units": {
+        "name": "Temperatuureenheden"
+      },
+      "airzone_low_battery": {
+        "name": "Zones met lage batterij"
+      },
+      "airzone_iaq_co2": {
+        "name": "CO₂ (Luchtkwaliteit)"
+      },
+      "airzone_iaq_pm25": {
+        "name": "PM2.5-deeltjes"
+      },
+      "airzone_iaq_pm10": {
+        "name": "PM10-deeltjes"
+      },
+      "airzone_iaq_tvoc": {
+        "name": "Totale VOC"
+      },
+      "airzone_iaq_pressure": {
+        "name": "Luchtdruk"
+      },
+      "airzone_iaq_index": {
+        "name": "Luchtkwaliteitsindex"
+      },
+      "airzone_iaq_score": {
+        "name": "Luchtkwaliteitsscore"
+      },
+      "airzone_iaq_ventmode": {
+        "name": "IAQ-ventilatiemodus"
+      }
     },
     "sensor.airzone_system_id": "Systeem-ID",
     "sensor.airzone_system_firmware": "Firmwareversie",
@@ -91,10 +207,18 @@
           "host": "Host",
           "port": "Poort"
         }
+      },
+      "prefix": {
+        "title": "Airzone Control - API-prefix",
+        "description": "Kies het API-prefix als automatische detectie mislukt.",
+        "data": {
+          "api_prefix": "API-prefix"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Kan geen verbinding maken. Controleer host/poort en of de Airzone-webserver bereikbaar is."
+      "cannot_connect": "Kan geen verbinding maken. Controleer host/poort en of de Airzone-webserver bereikbaar is.",
+      "no_host": "Voer een host in."
     },
     "abort": {
       "already_configured": "Deze host is al geconfigureerd."
@@ -105,9 +229,31 @@
       "init": {
         "title": "Airzone Control - Opties",
         "data": {
-          "scan_interval": "Scaninterval (seconden)"
-        }
+          "scan_interval": "Scaninterval (seconden)",
+          "group_1_name": "Groep 1 - Naam",
+          "group_1_zones": "Groep 1 - Zones",
+          "group_2_name": "Groep 2 - Naam",
+          "group_2_zones": "Groep 2 - Zones",
+          "group_3_name": "Groep 3 - Naam",
+          "group_3_zones": "Groep 3 - Zones",
+          "group_4_name": "Groep 4 - Naam",
+          "group_4_zones": "Groep 4 - Zones",
+          "group_5_name": "Groep 5 - Naam",
+          "group_5_zones": "Groep 5 - Zones",
+          "group_6_name": "Groep 6 - Naam",
+          "group_6_zones": "Groep 6 - Zones",
+          "group_7_name": "Groep 7 - Naam",
+          "group_7_zones": "Groep 7 - Zones",
+          "group_8_name": "Groep 8 - Naam",
+          "group_8_zones": "Groep 8 - Zones",
+          "groups_json": "Groepen (geavanceerd JSON)"
+        },
+        "description": "Maak tot 8 logische groepen aan met een naam en zone-selectie. Voor grote installaties gebruik je het geavanceerde JSON-veld (heeft voorrang op de UI-groepen)."
       }
+    },
+    "error": {
+      "invalid_scan_interval": "Ongeldig scaninterval. Gebruik een waarde tussen 2 en 300 seconden.",
+      "invalid_json": "Ongeldig JSON. Het moet een lijst met groep-objecten zijn."
     }
   },
   "state": {

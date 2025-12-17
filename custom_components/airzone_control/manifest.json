@@ -3,15 +3,26 @@
   "name": "Airzone Control",
   "documentation": "https://github.com/tecnoyfoto/airzone_control",
   "issue_tracker": "https://github.com/tecnoyfoto/airzone_control/issues",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "requirements": [],
-  "codeowners": ["@tecnoyfoto"],
+  "codeowners": [
+    "@tecnoyfoto"
+  ],
   "iot_class": "local_polling",
-  "loggers": ["custom_components.airzone_control"],
+  "loggers": [
+    "custom_components.airzone_control"
+  ],
   "dependencies": [],
   "config_flow": true,
   "zeroconf": [
-    { "type": "_http._tcp.local.", "name": "^AZ.*" },
-    { "type": "_http._tcp.local.", "name": "^Aidoo.*" }
-  ]
+    {
+      "type": "_http._tcp.local.",
+      "name": "^AZ.*"
+    },
+    {
+      "type": "_http._tcp.local.",
+      "name": "^Aidoo.*"
+    }
+  ],
+  "integration_type": "hub"
 }

@@ -2,6 +2,18 @@
 
 # Changelog
 
+## [1.6.0] - 2025-12-17
+
+- Added the **master thermostat** (`climate`) per system, to control all zones from a single entity.
+- Added **group thermostats** (`climate`) to control multiple zones as one.
+- Added an **Options UI** to create groups using:
+  - Group name + zone selection (checkbox list)
+  - Advanced JSON mode with no practical group limit
+- Groups now support **turn on/off** at group level.
+- Saving options triggers an **automatic integration reload**, so new group entities appear without restarting Home Assistant.
+- Improved translations for configuration and options.
+
+
 ## [1.5.1] - 2025-10-11
 
 ### 🌐 Internationalization (i18n)

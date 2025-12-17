@@ -14,6 +14,73 @@ Compared to the official integration, **Airzone Control**:
 
 ---
 
+## ✨ What’s new (v1.6.0)
+
+## What you get
+
+- Zone thermostats (one `climate` per zone).
+- System (master) thermostat per Airzone system.
+- **Group thermostats** (one `climate` per group):
+  - Set temperature, mode and **turn on/off**.
+  - Applies the action to all zones in the group.
+- Extra entities (sensors/selects/switches/buttons) depending on your Airzone setup.
+
+## Installation
+
+1. Copy this folder into:
+   `config/custom_components/airzone_control/`
+2. Restart Home Assistant.
+3. Add the integration from:
+   **Settings → Devices & Services → Add integration → Airzone Control**
+
+## Configuration
+
+### Basic setup
+- **Host**: your Airzone webserver IP
+- **Port**: your Airzone webserver port
+- The integration auto-detects the API prefix (and allows manual selection if needed).
+
+### Options
+Open:
+**Settings → Devices & Services → Airzone Control → (gear icon) Options**
+
+You can configure:
+- **Scan interval**
+- **Groups (friendly UI)**
+- **Groups (advanced JSON)**
+
+## Group thermostats
+
+### Friendly UI (recommended)
+In **Options**, you will see multiple group slots (default: 8):
+- **Group X – Name**
+- **Group X – Zones** (checkbox list)
+
+Leave `Groups (advanced JSON)` empty, save, and your group climates will appear as new `climate.*` entities.
+
+> Note: options changes trigger an automatic reload so new group entities appear without restarting Home Assistant.
+
+### Advanced JSON (no group limit)
+If you fill `Groups (advanced JSON)`, it overrides the UI groups.
+Format:
+
+```json
+[
+  {
+    "id": "zona_dia",
+    "name": "Zona día",
+    "zones": ["1/3", "1/4", "1/5"]
+  },
+  {
+    "id": "zona_noche",
+    "name": "Zona noche",
+    "zones": ["1/1", "1/2"]
+  }
+]
+
+
+---
+
 ## ✨ What’s new (v1.5.1)
 
 ### 🌐 Internationalization (i18n)
