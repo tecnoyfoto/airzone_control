@@ -167,7 +167,14 @@ class ZoneModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
 # ======================= SELECT: SISTEMA (MODO GLOBAL) ========================
 
 class GlobalModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
-    """Selector 'Modo' global por sistema (aplica a todas las zonas)."""
+    """Selector 'Modo' global por sistema (aplica a todas las zonas).
+
+    Debe imitar el comportamiento de la app de Airzone:
+      - El modo global se refleja en el campo `mode` (aunque todas las zonas estén apagadas).
+      - Al poner 'Apagado/Stop' se aplica en broadcast y apaga todas las zonas (on=0).
+      - Al elegir un modo (calor/frío/ventilación/...) SOLO se cambia el `mode` en broadcast,
+        sin encender zonas automáticamente.
+    """
 
     _attr_should_poll = False
     _attr_has_entity_name = True
@@ -182,28 +189,79 @@ class GlobalModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
     def _zones(self) -> List[dict]:
         return self.coordinator.zones_of_system(self._sid)
 
-    def _sys_modes_codes(self) -> List[int]:
+    def _rep_zone(self) -> Optional[dict]:
+        """Devuelve una zona representativa para leer el modo global.
+
+        Si existe master_zoneID y coincide con zoneID, se prioriza esa zona.
+        """
         zones = self._zones()
         if not zones:
-            return [2, 3, 4, 5, 7]
-        codes: List[int] = []
+            return None
+        for z in zones:
+            try:
+                zid = int(z.get("zoneID"))
+                mid = int(z.get("master_zoneID", zid))
+                if zid == mid:
+                    return z
+            except Exception:
+                continue
+        return zones[0]
+
+    def _detect_stop_code(self) -> int:
+        """Detecta el código STOP/OFF soportado por el sistema (normalmente 1; a veces 0)."""
+        codes: set[int] = set()
+        for z in self._zones():
+            zm = z.get("modes")
+            if isinstance(zm, list):
+                for x in zm:
+                    try:
+                        codes.add(int(x))
+                    except Exception:
+                        continue
+        if 1 in codes:
+            return 1
+        if 0 in codes:
+            return 0
+        rz = self._rep_zone()
+        if rz:
+            try:
+                cm = int(rz.get("mode"))
+                if cm in (0, 1):
+                    return cm
+            except Exception:
+                pass
+        return 1
+
+    def _sys_modes_codes(self) -> List[int]:
+        """Códigos de modo disponibles (dinámico), sin incluir OFF/STOP."""
+        zones = self._zones()
+        codes: set[int] = set()
         for z in zones:
             zm = z.get("modes")
             if isinstance(zm, list) and zm:
-                try:
-                    codes.extend([int(x) for x in zm])
-                except Exception:
-                    continue
+                for x in zm:
+                    try:
+                        codes.add(int(x))
+                    except Exception:
+                        continue
             else:
                 try:
-                    codes.append(int(z.get("mode")))
+                    codes.add(int(z.get("mode")))
                 except Exception:
                     continue
-        out = []
-        for c in [2, 3, 4, 5, 7]:
-            if c in codes and c not in out:
-                out.append(c)
-        return out or [2, 3, 4, 5, 7]
+
+        # OFF/STOP se representa como opción 'Apagado' (label)
+        codes.discard(0)
+        codes.discard(1)
+
+        if not codes:
+            return []
+
+        canonical = [2, 3, 4, 5, 7]
+        out: List[int] = [c for c in canonical if c in codes]
+        extra = sorted([c for c in codes if c not in out])
+        out.extend(extra)
+        return out
 
     # -------- SelectEntity --------
     @property
@@ -214,76 +272,74 @@ class GlobalModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
     def device_info(self) -> DeviceInfo:
         return DeviceInfo(
             identifiers={(DOMAIN, f"system-{self._sid}")},
-            name=f"Sistema {self._sid}",
-            manufacturer="Airzone",
-            model="HVAC System",
+            name=f"System {self._sid}",
         )
 
     @property
     def options(self) -> List[str]:
         off = i18n.label(self.coordinator.hass, "off")
-        names = [i18n.mode_name(self.coordinator.hass, c) for c in self._sys_modes_codes()]
-        names = [n for n in names if n and n != off]
-        out = [off]
-        for n in names:
-            if n not in out:
-                out.append(n)
+        out: List[str] = [off]
+
+        for c in self._sys_modes_codes():
+            name = i18n.mode_name(self.coordinator.hass, c) or f"Mode {c}"
+            if name and name != off and name not in out:
+                out.append(name)
+
         return out
 
     @property
     def current_option(self) -> Optional[str]:
-        zones = self._zones()
+        z = self._rep_zone()
+        if not z:
+            return None
+
+        off = i18n.label(self.coordinator.hass, "off")
         try:
-            if zones and all(int(z.get("on", 0)) == 0 for z in zones):
-                return i18n.label(self.coordinator.hass, "off")
+            code = int(z.get("mode"))
         except Exception:
-            pass
-        try:
-            modes = [int(z.get("mode")) for z in zones if int(z.get("on", 0)) == 1]
-            for cand in [2, 3, 4, 5, 7]:
-                if cand in modes:
-                    return i18n.mode_name(self.coordinator.hass, cand)
-        except Exception:
-            pass
-        return None
+            return None
+
+        if code in (0, 1):
+            return off
+
+        name = i18n.mode_name(self.coordinator.hass, code)
+        return name or f"Mode {code}"
 
     async def async_select_option(self, option: str) -> None:
         option = str(option or "").strip()
         if option not in self.options:
-            _LOGGER.debug(
-                "Opción '%s' no válida para sistema %s; opciones: %s",
-                option, self._sid, self.options
-            )
             return
 
-        tasks: List[asyncio.Task] = []
-        if option == i18n.label(self.coordinator.hass, "off"):
-            for z in self._zones():
-                try:
-                    sid = int(z.get("systemID"))
-                    zid = int(z.get("zoneID"))
-                    tasks.append(asyncio.create_task(self.coordinator.async_set_zone_params(sid, zid, on=0)))
-                except Exception:
-                    continue
-        else:
-            code: Optional[int] = None
-            for cand in [2, 3, 4, 5, 7]:
-                if i18n.mode_name(self.coordinator.hass, cand) == option:
-                    code = cand
-                    break
-            if code is None:
-                return
-            for z in self._zones():
-                try:
-                    sid = int(z.get("systemID"))
-                    zid = int(z.get("zoneID"))
-                    body: Dict[str, Any] = {"on": 1, "mode": int(code)}
-                    tasks.append(asyncio.create_task(self.coordinator.async_set_zone_params(sid, zid, **body)))
-                except Exception as e:
-                    _LOGGER.debug("No se pudo programar cambio de modo en zona %s: %s", z, e)
+        off = i18n.label(self.coordinator.hass, "off")
 
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        # STOP/OFF global: mode=STOP + on=0 en broadcast
+        if option == off:
+            stop_code = self._detect_stop_code()
+            await self.coordinator.async_set_zone_params(self._sid, 0, mode=int(stop_code), on=0)
+            return
+
+        # Otros modos: solo cambia el `mode` en broadcast
+        code: Optional[int] = None
+        for c in self._sys_modes_codes():
+            name = i18n.mode_name(self.coordinator.hass, c) or f"Mode {c}"
+            if name == option:
+                code = int(c)
+                break
+
+        if code is None:
+            # Fallback: "Mode X"
+            try:
+                import re as _re
+                m = _re.match(r"(?i)^mode\s+(\d+)$", option)
+                if m:
+                    code = int(m.group(1))
+            except Exception:
+                code = None
+
+        if code is None:
+            return
+
+        await self.coordinator.async_set_zone_params(self._sid, 0, mode=int(code))
 
     def _handle_coordinator_update(self) -> None:
         self.async_write_ha_state()

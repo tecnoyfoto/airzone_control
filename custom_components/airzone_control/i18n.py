@@ -83,25 +83,28 @@ def mode_name(hass, code: Optional[int]) -> Optional[str]:
     L = _lang(hass)
     names = {
         "es": {
+            1: "Apagado",
             2: "Frío",
             3: "Calor",
             4: "Ventilación",
             5: "Deshumidificación",
-            7: "Apagado",
+            7: "Automático",
         },
         "en": {
+            1: "Off",
             2: "Cool",
             3: "Heat",
             4: "Ventilation",
             5: "Dry",
-            7: "Off",
+            7: "Auto",
         },
         "ca": {
+            1: "Apagat",
             2: "Refrigeració",
             3: "Calefacció",
             4: "Ventilació",
             5: "Deshumidificació",
-            7: "Apagat",
+            7: "Automàtic",
         },
     }
     return names.get(L, names["es"]).get(int(code))
