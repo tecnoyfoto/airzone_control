@@ -287,7 +287,7 @@
     "Error 5": "Sonda de temperatura en circuit obert (sensor de zona desconnectat).",
     "Error 6": "Sonda de temperatura en curtcircuit (sensor de zona en curtcircuit).",
     "Error 7": "Element incompatible (dispositiu o mòdul no compatible amb el sistema).",
-    "Error 8": "Termòstat Lite no trobat (sense comunicació amb el termòstat de la zona).",
+    "Error 8": "Bateria baixa",
     "F05-H": "Sonda de temperatura de la bateria de calefacció en circuit obert.",
     "F05-C": "Sonda de temperatura de la bateria de refrigeració en circuit obert.",
     "F06-H": "Sonda de temperatura de la bateria de calefacció en curtcircuit.",

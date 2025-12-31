@@ -15,6 +15,10 @@ from .coordinator import AirzoneCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+# Ajustes "Hotel": robustez vs rapidez
+_HOTEL_PASSES = 3  # número total de pasadas (1 inicial + reintentos)
+_HOTEL_SLEEP_BETWEEN_CALLS = 0.05  # segundos entre PUTs para evitar saturar el webserver
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities
@@ -46,6 +50,7 @@ async def async_setup_entry(
 
 # -------------------- Base de botones por sistema --------------------
 
+
 class _SystemButton(CoordinatorEntity[AirzoneCoordinator], ButtonEntity):
     _attr_should_poll = False
     _attr_has_entity_name = True  # nombre traducido por translations/*.json
@@ -56,7 +61,11 @@ class _SystemButton(CoordinatorEntity[AirzoneCoordinator], ButtonEntity):
 
     @property
     def available(self) -> bool:
-        return any(1 for (sid, _z) in (self.coordinator.data or {}).keys() if sid == self._sid)
+        return any(
+            1
+            for (sid, _z) in (self.coordinator.data or {}).keys()
+            if sid == self._sid
+        )
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -71,8 +80,94 @@ class _SystemButton(CoordinatorEntity[AirzoneCoordinator], ButtonEntity):
     def _zones(self) -> List[dict]:
         return self.coordinator.zones_of_system(self._sid)
 
+    async def _hotel_set_all_on(self, desired_on: int) -> None:
+        """Fuerza ON/OFF en todas las zonas con reintentos.
+
+        Motivo: algunos webservers Airzone (según firmware/carga) pierden
+        algún PUT si mandamos muchos a la vez.
+        """
+        desired_on = 1 if int(desired_on) else 0
+
+        zones = self._zones()
+        zone_ids: List[int] = []
+        for z in zones:
+            try:
+                zone_ids.append(int(z.get("zoneID")))
+            except Exception:
+                continue
+
+        if not zone_ids:
+            return
+
+        # Aseguramos tener estado inicial para validar reintentos
+        await self.coordinator.async_request_refresh()
+
+        for pas in range(_HOTEL_PASSES):
+            pending: List[int] = []
+            for zid in zone_ids:
+                z = self.coordinator.get_zone(self._sid, zid)
+                if not z:
+                    pending.append(zid)
+                    continue
+                try:
+                    cur = int(z.get("on", -1))
+                except Exception:
+                    cur = -1
+                if cur != desired_on:
+                    pending.append(zid)
+
+            if not pending:
+                return
+
+            _LOGGER.debug(
+                "[Hotel] System %s pass %s/%s -> set on=%s for zones %s",
+                self._sid,
+                pas + 1,
+                _HOTEL_PASSES,
+                desired_on,
+                pending,
+            )
+
+            for zid in pending:
+                try:
+                    await self.coordinator.async_set_zone_params(
+                        self._sid,
+                        zid,
+                        request_refresh=False,
+                        on=desired_on,
+                    )
+                except Exception as e:
+                    _LOGGER.debug("[Hotel] set on=%s failed for %s/%s: %s", desired_on, self._sid, zid, e)
+                await asyncio.sleep(_HOTEL_SLEEP_BETWEEN_CALLS)
+
+            await self.coordinator.async_request_refresh()
+
+        # Si llegamos aquí, todavía queda algo desincronizado
+        still: List[int] = []
+        for zid in zone_ids:
+            z = self.coordinator.get_zone(self._sid, zid)
+            if not z:
+                still.append(zid)
+                continue
+            try:
+                cur = int(z.get("on", -1))
+            except Exception:
+                cur = -1
+            if cur != desired_on:
+                still.append(zid)
+
+        if still:
+            _LOGGER.warning(
+                "[Hotel] System %s: after %s passes some zones did not reach on=%s: %s",
+                self._sid,
+                _HOTEL_PASSES,
+                desired_on,
+                still,
+            )
+
 
 # -------------------- Apagar todo (Hotel) --------------------
+
 
 class HotelTurnAllOffButton(_SystemButton):
     _attr_translation_key = "hotel_off_all"
@@ -82,21 +177,13 @@ class HotelTurnAllOffButton(_SystemButton):
         self._attr_unique_id = f"{DOMAIN}_system_{self._sid}_hotel_off_all"
 
     async def async_press(self) -> None:
-        tasks: List[asyncio.Task] = []
         zones = self._zones()
         _LOGGER.debug("[Hotel] Turn ALL OFF on system %s (%d zones)", self._sid, len(zones))
-        for z in zones:
-            try:
-                zid = int(z.get("zoneID"))
-                tasks.append(asyncio.create_task(self.coordinator.async_set_zone_params(self._sid, zid, on=0)))
-            except Exception as e:
-                _LOGGER.debug("[Hotel] OFF skip zone %s: %s", z, e)
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        await self.coordinator.async_request_refresh()
+        await self._hotel_set_all_on(0)
 
 
 # -------------------- Encender todo (Hotel) --------------------
+
 
 class HotelTurnAllOnButton(_SystemButton):
     _attr_translation_key = "hotel_on_all"
@@ -106,21 +193,13 @@ class HotelTurnAllOnButton(_SystemButton):
         self._attr_unique_id = f"{DOMAIN}_system_{self._sid}_hotel_on_all"
 
     async def async_press(self) -> None:
-        tasks: List[asyncio.Task] = []
         zones = self._zones()
         _LOGGER.debug("[Hotel] Turn ALL ON on system %s (%d zones)", self._sid, len(zones))
-        for z in zones:
-            try:
-                zid = int(z.get("zoneID"))
-                tasks.append(asyncio.create_task(self.coordinator.async_set_zone_params(self._sid, zid, on=1)))
-            except Exception as e:
-                _LOGGER.debug("[Hotel] ON skip zone %s: %s", z, e)
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        await self.coordinator.async_request_refresh()
+        await self._hotel_set_all_on(1)
 
 
 # -------------------- Copiar consigna a todas (Hotel) --------------------
+
 
 class HotelCopySetpointButton(_SystemButton):
     _attr_translation_key = "hotel_copy_sp"
@@ -160,7 +239,10 @@ class HotelCopySetpointButton(_SystemButton):
         if mzid is None:
             _LOGGER.debug("[Hotel] Copy SP: no master zone in system %s", self._sid)
             return
+
+        await self.coordinator.async_request_refresh()
         mz = self.coordinator.get_zone(self._sid, mzid) or {}
+
         m_set = _sfloat(mz, "setpoint")
         m_hs = _sfloat(mz, "heatsetpoint")
         m_cs = _sfloat(mz, "coolsetpoint")
@@ -178,7 +260,6 @@ class HotelCopySetpointButton(_SystemButton):
         zones = self._zones()
         _LOGGER.debug("[Hotel] Copy SP from master zone %s to %d zones", mzid, len(zones))
 
-        tasks: List[asyncio.Task] = []
         for z in zones:
             try:
                 zid = int(z.get("zoneID"))
@@ -195,7 +276,11 @@ class HotelCopySetpointButton(_SystemButton):
             coolmax = _sfloat(z, "coolmaxtemp") or maxTemp
             coolmin = _sfloat(z, "coolmintemp") or minTemp
 
-            double_sp = _sint(z, "double_sp", 0) == 1 or ("heatsetpoint" in z and "coolsetpoint" in z)
+            double_sp = (
+                _sint(z, "double_sp", 0) == 1
+                or ("heatsetpoint" in z and "coolsetpoint" in z)
+            )
+
             body: Dict[str, Any] = {}
 
             if double_sp and (m_hs is not None or m_cs is not None):
@@ -209,12 +294,22 @@ class HotelCopySetpointButton(_SystemButton):
                 v = _clamp(_round_step(m_set, step), minTemp, maxTemp)
                 body["setpoint"] = v
             else:
-                _LOGGER.debug("[Hotel] Copy SP: nothing to copy for zone %s/%s", self._sid, zid)
+                _LOGGER.debug(
+                    "[Hotel] Copy SP: nothing to copy for zone %s/%s", self._sid, zid
+                )
                 continue
 
-            body["on"] = 1
-            tasks.append(asyncio.create_task(self.coordinator.async_set_zone_params(self._sid, zid, **body)))
+            # IMPORTANTÍSIMO: copiar consigna NO cambia el ON/OFF
+            try:
+                await self.coordinator.async_set_zone_params(
+                    self._sid,
+                    zid,
+                    request_refresh=False,
+                    **body,
+                )
+            except Exception as e:
+                _LOGGER.debug("[Hotel] Copy SP failed for %s/%s: %s", self._sid, zid, e)
 
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.sleep(_HOTEL_SLEEP_BETWEEN_CALLS)
+
         await self.coordinator.async_request_refresh()

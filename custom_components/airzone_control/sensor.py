@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
@@ -119,6 +119,22 @@ class _BaseZoneSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
             manufacturer="Airzone",
             model="Local API zone",
         )
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        z = self._zone()
+        attrs: dict[str, Any] = {
+            "system_id": self._sid,
+            "zone_id": self._zid,
+        }
+        # Optional info if available in payload
+        if "thermos_firmware" in z:
+            attrs["thermos_firmware"] = z.get("thermos_firmware")
+        if "thermos_type" in z:
+            attrs["thermos_type"] = z.get("thermos_type")
+        if "thermos_radio" in z:
+            attrs["thermos_radio"] = z.get("thermos_radio")
+        return attrs
 
 
 class _BaseIAQSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
@@ -315,6 +331,7 @@ class SystemOutdoorTempSensor(_BaseSystemSensor):
         super().__init__(coordinator, system_id, "outdoor_temp", "outdoor_temp")
         self._attr_native_unit_of_measurement = "°C"
         self._attr_device_class = "temperature"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
         self._ha_entity_listener_remove = None
 
     # -------------------- utilidades internas --------------------
@@ -415,6 +432,7 @@ class SystemReturnTempSensor(_BaseSystemSensor):
         super().__init__(coordinator, system_id, "return_temp", "return_temp")
         self._attr_native_unit_of_measurement = "°C"
         self._attr_device_class = "temperature"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> Optional[float]:
@@ -433,6 +451,7 @@ class SystemWorkTempSensor(_BaseSystemSensor):
         super().__init__(coordinator, system_id, "work_temp", "work_temp")
         self._attr_native_unit_of_measurement = "°C"
         self._attr_device_class = "temperature"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> Optional[float]:
@@ -522,6 +541,7 @@ def _build_zone_sensors(coord: AirzoneCoordinator, sid: int, zid: int) -> List[S
 class ZoneAirDemandSensor(_BaseZoneSensor):
     def __init__(self, coordinator, sid, zid) -> None:
         super().__init__(coordinator, sid, zid, "air_demand", "air_demand")
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> Optional[int]:
@@ -535,6 +555,7 @@ class ZoneAirDemandSensor(_BaseZoneSensor):
 class ZoneHeatDemandSensor(_BaseZoneSensor):
     def __init__(self, coordinator, sid, zid) -> None:
         super().__init__(coordinator, sid, zid, "heat_demand", "heat_demand")
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> Optional[int]:
@@ -548,6 +569,7 @@ class ZoneHeatDemandSensor(_BaseZoneSensor):
 class ZoneColdDemandSensor(_BaseZoneSensor):
     def __init__(self, coordinator, sid, zid) -> None:
         super().__init__(coordinator, sid, zid, "cold_demand", "cold_demand")
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> Optional[int]:
@@ -561,6 +583,7 @@ class ZoneColdDemandSensor(_BaseZoneSensor):
 class ZoneFloorDemandSensor(_BaseZoneSensor):
     def __init__(self, coordinator, sid, zid) -> None:
         super().__init__(coordinator, sid, zid, "floor_demand", "floor_demand")
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> Optional[int]:
@@ -575,12 +598,68 @@ class ZoneErrorsSensor(_BaseZoneSensor):
     def __init__(self, coordinator, sid, zid) -> None:
         super().__init__(coordinator, sid, zid, "errors", "errors")
 
+    def _parsed_errors(self):
+        """Parse API `errors` into translated descriptions + details."""
+        z = self._zone()
+        errs = z.get("errors")
+
+        descriptions: list[str] = []
+        raw_errors: list = []
+        detail: list[dict] = []
+
+        if not errs:
+            return (descriptions, raw_errors, detail)
+
+        if not isinstance(errs, list):
+            errs = [errs]
+
+        seen_desc: set[str] = set()
+
+        for item in errs:
+            if isinstance(item, dict):
+                for scope, raw in item.items():
+                    raw_str = "" if raw is None else str(raw).strip()
+                    if not raw_str:
+                        continue
+                    desc = i18n.error_desc(self.hass, raw_str)
+                    if desc and desc not in seen_desc:
+                        seen_desc.add(desc)
+                        descriptions.append(desc)
+                    raw_errors.append({str(scope): raw_str})
+                    detail.append(
+                        {
+                            "scope": str(scope),
+                            "raw": raw_str,
+                            "description": desc,
+                        }
+                    )
+            else:
+                raw_str = "" if item is None else str(item).strip()
+                if not raw_str:
+                    continue
+                desc = i18n.error_desc(self.hass, raw_str)
+                if desc and desc not in seen_desc:
+                    seen_desc.add(desc)
+                    descriptions.append(desc)
+                raw_errors.append(raw_str)
+                detail.append({"scope": "unknown", "raw": raw_str, "description": desc})
+
+        return (descriptions, raw_errors, detail)
+
     @property
     def native_value(self) -> Optional[str]:
-        errs = self._zone().get("errors")
-        if isinstance(errs, list):
-            return ", ".join(str(e) for e in errs) if errs else None
-        return None
+        descriptions, _, _ = self._parsed_errors()
+        if not descriptions:
+            return None
+        return ", ".join(descriptions)
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        attrs = dict(super().extra_state_attributes or {})
+        _, raw_errors, detail = self._parsed_errors()
+        attrs["raw_errors"] = raw_errors
+        attrs["errors_detail"] = detail
+        return attrs
 
 
 class ZoneHumiditySensor(_BaseZoneSensor):
@@ -588,6 +667,7 @@ class ZoneHumiditySensor(_BaseZoneSensor):
         super().__init__(coordinator, sid, zid, "humidity", "humidity")
         self._attr_native_unit_of_measurement = "%"
         self._attr_device_class = "humidity"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> Optional[float]:
@@ -603,6 +683,7 @@ class ZoneTemperatureSensor(_BaseZoneSensor):
         super().__init__(coordinator, sid, zid, "temperature", "temperature")
         self._attr_native_unit_of_measurement = "°C"
         self._attr_device_class = "temperature"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> Optional[float]:
@@ -616,6 +697,7 @@ class ZoneTemperatureSensor(_BaseZoneSensor):
 class ZoneOpenWindowSensor(_BaseZoneSensor):
     def __init__(self, coordinator, sid, zid) -> None:
         super().__init__(coordinator, sid, zid, "open_window", "open_window")
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> Optional[int]:
@@ -836,6 +918,7 @@ class WSWifiRSSISensor(_BaseWSSensor):
     def __init__(self, coordinator: AirzoneCoordinator) -> None:
         super().__init__(coordinator, "ws_wifi_rssi", "ws_wifi_rssi")
         self._attr_device_class = "signal_strength"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "dBm"
 
     @property
@@ -1002,6 +1085,8 @@ class IAQCO2Sensor(_BaseIAQSensor):
     def __init__(self, coordinator, sid, iid) -> None:
         super().__init__(coordinator, sid, iid, "co2", "co2")
         self._attr_native_unit_of_measurement = "ppm"
+        # Mantener estadísticas a largo plazo (y evitar reparaciones) si ya existían
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> Optional[int]:
@@ -1016,6 +1101,8 @@ class IAQTVOCSensor(_BaseIAQSensor):
     def __init__(self, coordinator, sid, iid) -> None:
         super().__init__(coordinator, sid, iid, "tvoc", "tvoc")
         self._attr_native_unit_of_measurement = "ppb"
+        # Mantener estadísticas a largo plazo (y evitar reparaciones) si ya existían
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> Optional[int]:
@@ -1030,6 +1117,8 @@ class IAQPM25Sensor(_BaseIAQSensor):
     def __init__(self, coordinator, sid, iid) -> None:
         super().__init__(coordinator, sid, iid, "pm25", "pm25")
         self._attr_native_unit_of_measurement = "µg/m³"
+        # Mantener estadísticas a largo plazo (y evitar reparaciones) si ya existían
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> Optional[float]:
@@ -1044,6 +1133,8 @@ class IAQPM10Sensor(_BaseIAQSensor):
     def __init__(self, coordinator, sid, iid) -> None:
         super().__init__(coordinator, sid, iid, "pm10", "pm10")
         self._attr_native_unit_of_measurement = "µg/m³"
+        # Mantener estadísticas a largo plazo (y evitar reparaciones) si ya existían
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> Optional[float]:
@@ -1058,6 +1149,8 @@ class IAQPressureSensor(_BaseIAQSensor):
     def __init__(self, coordinator, sid, iid) -> None:
         super().__init__(coordinator, sid, iid, "pressure", "pressure")
         self._attr_native_unit_of_measurement = "hPa"
+        # Mantener estadísticas a largo plazo (y evitar reparaciones) si ya existían
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> Optional[float]:

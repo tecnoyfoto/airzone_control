@@ -287,7 +287,7 @@
     "Error 5": "Tenperatura-zunda zirkuitu irekian (zonako sentsorea deskonektatuta).",
     "Error 6": "Tenperatura-zunda zirkuitu laburrean (zonako sentsorea zirkuitu laburrean).",
     "Error 7": "Elementu bateragaitza (gailua edo modulua sistemak ez du onartzen).",
-    "Error 8": "Lite termostatoa ez da aurkitu (ez dago komunikaziorik zonako termostatoarekin).",
+    "Error 8": "Bateria baxua",
     "F05-H": "Berokuntza bateriaren tenperatura-zunda zirkuitu irekian.",
     "F05-C": "Hozte bateriaren tenperatura-zunda zirkuitu irekian.",
     "F06-H": "Berokuntza bateriaren tenperatura-zunda zirkuitu laburrean.",

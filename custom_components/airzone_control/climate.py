@@ -255,7 +255,6 @@ class AirzoneZoneClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
             self._system_id,
             self._zone_id,
             setpoint=value,
-            on=1,
         )
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
@@ -428,15 +427,22 @@ class AirzoneMasterClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity)
         if not zones:
             return HVACMode.OFF
 
-        # Si alguna está apagada, representamos OFF
+        # OFF solo si TODAS las zonas están OFF
+        first_on: dict | None = None
         for z in zones:
             try:
-                if int(z.get("on", 1)) == 0:
-                    return HVACMode.OFF
+                if int(z.get("on", 1)) != 0:
+                    first_on = z
+                    break
             except Exception:
-                continue
+                # Si no podemos interpretar 'on', asumimos que está activa
+                first_on = z
+                break
 
-        return translate_current_mode(zones[0], self.hvac_modes)
+        if first_on is None:
+            return HVACMode.OFF
+
+        return translate_current_mode(first_on, self.hvac_modes)
 
     @property
     def hvac_action(self) -> HVACAction | None:
@@ -479,47 +485,53 @@ class AirzoneMasterClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity)
             await self.coordinator.async_set_zone_params(
                 self._system_id,
                 zid,
+                request_refresh=False,
                 setpoint=value,
-                on=1,
             )
+        await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        # El termostato maestro NO cambia el modo (eso lo hace el modo global o el selector por zona).
+        # Aquí solo hacemos ON/OFF masivo.
         if hvac_mode == HVACMode.OFF:
             for zid in self._zone_ids:
                 await self.coordinator.async_set_zone_params(
                     self._system_id,
                     zid,
+                    request_refresh=False,
                     on=0,
                 )
+            await self.coordinator.async_request_refresh()
             return
-
-        code = HVAC_TO_API_MODE.get(hvac_mode)
-        body: Dict[str, Any] = {"on": 1}
-        if code is not None:
-            body["mode"] = code
 
         for zid in self._zone_ids:
             await self.coordinator.async_set_zone_params(
                 self._system_id,
                 zid,
-                **body,
+                request_refresh=False,
+                on=1,
             )
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_on(self) -> None:
         for zid in self._zone_ids:
             await self.coordinator.async_set_zone_params(
                 self._system_id,
                 zid,
+                request_refresh=False,
                 on=1,
             )
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self) -> None:
         for zid in self._zone_ids:
             await self.coordinator.async_set_zone_params(
                 self._system_id,
                 zid,
+                request_refresh=False,
                 on=0,
             )
+        await self.coordinator.async_request_refresh()
 
 
 # ---------------------------------------------------------------------------
@@ -665,15 +677,21 @@ class AirzoneGroupClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
         if not zones:
             return HVACMode.OFF
 
-        # Si alguna está apagada, representamos OFF
+        # OFF solo si TODAS las zonas del grupo están OFF
+        first_on: dict | None = None
         for z in zones:
             try:
-                if int(z.get("on", 1)) == 0:
-                    return HVACMode.OFF
+                if int(z.get("on", 1)) != 0:
+                    first_on = z
+                    break
             except Exception:
-                continue
+                first_on = z
+                break
 
-        return translate_current_mode(zones[0], self.hvac_modes)
+        if first_on is None:
+            return HVACMode.OFF
+
+        return translate_current_mode(first_on, self.hvac_modes)
 
     @property
     def hvac_action(self) -> HVACAction | None:
@@ -718,9 +736,10 @@ class AirzoneGroupClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
             await self.coordinator.async_set_zone_params(
                 system_id,
                 zone_id,
+                request_refresh=False,
                 setpoint=value,
-                on=1,
             )
+        await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         if hvac_mode == HVACMode.OFF:
@@ -728,8 +747,10 @@ class AirzoneGroupClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
                 await self.coordinator.async_set_zone_params(
                     system_id,
                     zone_id,
+                    request_refresh=False,
                     on=0,
                 )
+            await self.coordinator.async_request_refresh()
             return
 
         code = HVAC_TO_API_MODE.get(hvac_mode)
@@ -741,21 +762,27 @@ class AirzoneGroupClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
             await self.coordinator.async_set_zone_params(
                 system_id,
                 zone_id,
+                request_refresh=False,
                 **body,
             )
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_on(self) -> None:
         for system_id, zone_id in self._members:
             await self.coordinator.async_set_zone_params(
                 system_id,
                 zone_id,
+                request_refresh=False,
                 on=1,
             )
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self) -> None:
         for system_id, zone_id in self._members:
             await self.coordinator.async_set_zone_params(
                 system_id,
                 zone_id,
+                request_refresh=False,
                 on=0,
             )
+        await self.coordinator.async_request_refresh()

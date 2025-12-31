@@ -14,6 +14,43 @@ Compared to the official integration, **Airzone Control**:
 
 ---
 
+## ✨ What’s new (v1.6.2)
+
+### 🧩 Master thermostat & “Hotel” buttons (turn all on/off)
+- The **master thermostat** now reflects the system state correctly: it is **ON if at least 1 zone is ON**, and only turns OFF when **all** zones are OFF.
+- Changing the master **target temperature** applies the setpoint to **all zones (ON or OFF)** **without powering them on**.
+- **Hotel buttons** (Turn all ON / Turn all OFF) are more reliable: paced commands + verification/retries so zones reach the expected final state.
+
+### 🩺 Diagnostics download (now working)
+From the device page you can click **“Download diagnostics”** to generate a JSON snapshot of the integration (useful for debugging/reporting without digging through logs).
+
+### 🧪 Debug attributes: `systemID`, `zoneID` (and `group_id` when applicable)
+Entities expose the real Airzone identifiers as attributes. Useful to:
+- quickly verify which zone is which,
+- debug automations,
+- cross-check data against the API.
+
+### ℹ️ More information in the device page
+When returned by the API, the **Device information** card may show:
+- serial number,
+- firmware version.
+
+### 🛑 Errors: from “Error X” to human-readable text + translations
+- The error sensor now shows a readable description (e.g., “Low battery”, “Communication failure”, etc.).
+- Debug details remain available as attributes (codes/lists).
+- Special case: **Error 8 ⇒ “Low battery”**.
+- Error descriptions are translated across the integration languages.
+
+### 📈 Long-term statistics restored (`state_class`)
+- “Regular” sensors (temperature, humidity, demand, etc.) correctly declare `state_class` and units/classes again.
+- Same for IAQ sensors (CO₂, TVOC, PM2.5, PM10, pressure), removing warnings and restoring statistics/history.
+
+### 🛠️ Robustness: don’t crash on missing `zone_id`
+Fixed a case where an entity could end up with a missing `zone_id` (None) and trigger errors in the update loop. It’s now handled safely.
+
+> Note: **Global Mode** remains independent. Neither the master thermostat nor the Hotel buttons ever change the global mode.
+
+
 ## ✨ What’s new (v1.6.1)
 
 ### ✅ Global Mode: 1:1 behavior with the Airzone app

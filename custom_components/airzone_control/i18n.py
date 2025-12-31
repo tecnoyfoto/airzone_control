@@ -156,3 +156,44 @@ def iaq_vent_label(hass, code: int) -> str:
     if int(code) == 1:
         return label(hass, "manual")
     return label(hass, "auto")
+# -------------------------------------------------------------------
+# Error description helper (uses translations/<lang>.json -> error section)
+# -------------------------------------------------------------------
+
+import json as _json
+from functools import lru_cache
+from pathlib import Path
+
+
+def _lang_full(hass) -> str:
+    """Return 2-letter language code from HA (fallback 'en')."""
+    try:
+        lang = (getattr(hass.config, "language", None) or "").lower()
+    except Exception:
+        lang = ""
+    code = (lang.split("-")[0] if lang else "en").strip()
+    return code or "en"
+
+
+@lru_cache(maxsize=32)
+def _load_error_map(lang: str) -> dict[str, str]:
+    """Load error mapping from translations files."""
+    lang = (lang or "en").lower()
+    translations_dir = Path(__file__).with_name("translations")
+    candidate = translations_dir / f"{lang}.json"
+    if not candidate.exists():
+        candidate = translations_dir / "en.json"
+    try:
+        payload = _json.loads(candidate.read_text(encoding="utf-8"))
+        return payload.get("error", {}) or {}
+    except Exception:
+        return {}
+
+
+def error_desc(hass, raw: str) -> str:
+    """Return a human description for a raw error string, translated if possible."""
+    s = (raw or "").strip()
+    if not s:
+        return ""
+    m = _load_error_map(_lang_full(hass))
+    return m.get(s, s)

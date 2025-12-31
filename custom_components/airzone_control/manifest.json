@@ -3,7 +3,7 @@
   "name": "Airzone Control",
   "documentation": "https://github.com/tecnoyfoto/airzone_control",
   "issue_tracker": "https://github.com/tecnoyfoto/airzone_control/issues",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "requirements": [],
   "codeowners": [
     "@tecnoyfoto"

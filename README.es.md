@@ -14,6 +14,43 @@ A diferencia de la integración oficial, **Airzone Control**:
 
 ---
 
+## ✨ Novedades (v1.6.2)
+
+### 🧩 Termostato maestro y botones “Hotel” (encender/apagar todo)
+- El **termostato maestro** refleja correctamente el estado del sistema: **está encendido si hay al menos 1 zona encendida** y solo se apaga cuando **todas** están apagadas.
+- Cambiar la **temperatura deseada** en el maestro **aplica la consigna a todas las zonas (estén activas o no)** **sin encenderlas**.
+- Los botones **Encender todo / Apagar todo (Hotel)** son más fiables: envían comandos de forma controlada y reintentan si alguna zona no queda en el estado final esperado.
+
+### 🩺 Descarga de diagnósticos (ya funciona)
+En la página del dispositivo puedes pulsar **“Descargar diagnósticos”** y se genera un JSON con una “foto” de la integración (útil para depurar o reportar incidencias sin buscar logs a mano).
+
+### 🧪 Atributos de depuración: `systemID`, `zoneID` (y `group_id` cuando aplica)
+Las entidades exponen en atributos los identificadores reales de Airzone. Sirve para:
+- comprobar rápido qué zona es cuál,
+- depurar automatizaciones,
+- cruzar información con la API.
+
+### ℹ️ Más información en la ficha del dispositivo
+Si la API lo devuelve, en **Información de dispositivo** puede aparecer:
+- número de serie,
+- versión de firmware.
+
+### 🛑 Errores: de “Error X” a texto humano + traducciones
+- El sensor de errores muestra una descripción entendible (por ejemplo “Batería baja”, “Fallo de comunicaciones”, etc.).
+- Se mantienen detalles útiles en atributos (códigos/listas) para depurar.
+- Caso especial: **Error 8 ⇒ “Batería baja”**.
+- Las descripciones de errores están traducidas en los idiomas de la integración.
+
+### 📈 Estadísticas a largo plazo restauradas (state_class)
+- Sensores “normales” (temperatura, humedad, demandas, etc.) vuelven a declarar correctamente `state_class` y unidades/clases cuando toca.
+- Lo mismo para sensores IAQ (CO₂, TVOC, PM2.5, PM10, presión), evitando avisos y recuperando estadísticas/histórico.
+
+### 🛠️ Robustez: no romper por `zone_id` ausente
+Se corrige un caso en el que una entidad podía quedarse sin `zone_id` (None) y provocar errores en el ciclo de actualización. Ahora se maneja de forma segura.
+
+> Nota: como siempre, **Modo Global** es independiente. Ni el maestro ni los botones “Hotel” cambian el modo global.
+
+
 ## ✨ Novedades (v1.6.1)
 
 ### ✅ Modo Global: comportamiento idéntico a la app de Airzone

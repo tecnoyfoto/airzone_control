@@ -580,7 +580,7 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
 
     # ---------------- setters ----------------
 
-    async def async_set_zone_params(self, system_id: int, zone_id: int, **kwargs) -> dict | None:
+    async def async_set_zone_params(self, system_id: int, zone_id: int, *, request_refresh: bool = True, **kwargs) -> dict | None:
         """PUT /hvac con refresco inmediato (no bloqueante)."""
         body = {"systemID": int(system_id), "zoneID": int(zone_id)}
         body.update(kwargs)
@@ -602,7 +602,8 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
                     except Exception:
                         data = {"raw": txt}
                     # refresco sin bloquear
-                    self.hass.async_create_task(self.async_request_refresh())
+                    if request_refresh:
+                        self.hass.async_create_task(self.async_request_refresh())
                     self._prefer_https = (scheme == "https")
                     self.transport_scheme = scheme
                     return data

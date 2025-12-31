@@ -287,7 +287,7 @@
     "Error 5": "Sonda de temperatura em circuito aberto (sensor de zona desligado).",
     "Error 6": "Sonda de temperatura em curto-circuito (sensor de zona em curto).",
     "Error 7": "Elemento incompatível (dispositivo ou módulo não suportado pelo sistema).",
-    "Error 8": "Termóstato Lite não encontrado (sem comunicação com o termóstato da zona).",
+    "Error 8": "Bateria fraca",
     "F05-H": "Sonda de temperatura da bateria de aquecimento em circuito aberto.",
     "F05-C": "Sonda de temperatura da bateria de arrefecimento em circuito aberto.",
     "F06-H": "Sonda de temperatura da bateria de aquecimento em curto-circuito.",

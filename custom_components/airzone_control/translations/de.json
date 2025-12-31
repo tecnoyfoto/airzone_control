@@ -287,7 +287,7 @@
     "Error 5": "Temperaturfühler offener Stromkreis (Zonensensor getrennt).",
     "Error 6": "Temperaturfühler Kurzschluss (Zonensensor kurzgeschlossen).",
     "Error 7": "Inkompatibles Element (Gerät/Modul vom System nicht unterstützt).",
-    "Error 8": "Lite-Thermostat nicht gefunden (keine Kommunikation mit dem Zonethermostat).",
+    "Error 8": "Batterie schwach",
     "F05-H": "Heizbatterie-Temperaturfühler offener Stromkreis.",
     "F05-C": "Kühlbatterie-Temperaturfühler offener Stromkreis.",
     "F06-H": "Heizbatterie-Temperaturfühler Kurzschluss.",

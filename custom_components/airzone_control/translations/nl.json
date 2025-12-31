@@ -287,7 +287,7 @@
     "Error 5": "Temperatuursensor open circuit (zonesensor losgekoppeld).",
     "Error 6": "Temperatuursensor kortsluiting (zonesensor kortgesloten).",
     "Error 7": "Onverenigbaar element (apparaat of module niet door het systeem ondersteund).",
-    "Error 8": "Lite-thermostaat niet gevonden (geen communicatie met de zonethermostaat).",
+    "Error 8": "Batterij bijna leeg",
     "F05-H": "Temperatuursensor verwarmingsbatterij open circuit.",
     "F05-C": "Temperatuursensor koelbatterij open circuit.",
     "F06-H": "Temperatuursensor verwarmingsbatterij kortsluiting.",

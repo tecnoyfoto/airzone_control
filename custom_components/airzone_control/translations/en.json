@@ -287,7 +287,7 @@
     "Error 5": "Temperature probe open circuit (zone sensor disconnected).",
     "Error 6": "Temperature probe short circuit (zone sensor shorted).",
     "Error 7": "Incompatible element (device or module not supported by the system).",
-    "Error 8": "Lite thermostat not found (no communication with the zone thermostat).",
+    "Error 8": "Low battery",
     "F05-H": "Heating coil temperature probe open circuit.",
     "F05-C": "Cooling coil temperature probe open circuit.",
     "F06-H": "Heating coil temperature probe short circuit.",
