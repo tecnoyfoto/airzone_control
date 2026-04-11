@@ -39,6 +39,7 @@ def label(hass, key: str) -> str:
             "very_low": "Muy baja",
             "very_high": "Muy alta",
             "manual": "Manual",
+            "swing": "Oscilación",
         },
         "en": {
             "on": "On",
@@ -53,6 +54,7 @@ def label(hass, key: str) -> str:
             "very_low": "Very low",
             "very_high": "Very high",
             "manual": "Manual",
+            "swing": "Swing",
         },
         "ca": {
             "on": "Encès",
@@ -67,6 +69,7 @@ def label(hass, key: str) -> str:
             "very_low": "Molt baixa",
             "very_high": "Molt alta",
             "manual": "Manual",
+            "swing": "Oscil·lació",
         },
     }
     return base.get(L, base["es"]).get(key, key)

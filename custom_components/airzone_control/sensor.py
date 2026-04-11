@@ -231,6 +231,15 @@ def _build_system_sensors(coord: AirzoneCoordinator, sid: int) -> List[SensorEnt
     # Placeholder de riesgo de condensación
     entities.append(SystemCondRiskMasterSensor(coord, sid))
 
+    if "energy_consump" in sysd:
+        entities.append(GenericSystemValueSensor(coord, sid, "Energy consumption", "energy_consump", ("energy_consump",), cast=int))
+    if "energy_produced" in sysd:
+        entities.append(GenericSystemValueSensor(coord, sid, "Energy produced", "energy_produced", ("energy_produced",), cast=int))
+    if "power_gen_heat" in sysd:
+        entities.append(GenericSystemValueSensor(coord, sid, "Heat generation power", "power_gen_heat", ("power_gen_heat",), cast=int))
+    if "consumption_ue" in sysd:
+        entities.append(GenericSystemValueSensor(coord, sid, "UE consumption", "consumption_ue", ("consumption_ue",), cast=int))
+
     return entities
 
 
@@ -522,6 +531,19 @@ def _build_zone_sensors(coord: AirzoneCoordinator, sid: int, zid: int) -> List[S
     # Eco adapt (texto off/on)
     if has("eco_adapt"):
         entities.append(ZoneEcoAdaptSensor(coord, sid, zid))
+
+    if has("battery"):
+        entities.append(GenericZoneValueSensor(coord, sid, zid, "Battery", "battery", ("battery",), unit="%", cast=int, state_class=SensorStateClass.MEASUREMENT))
+    if has("coverage"):
+        entities.append(GenericZoneValueSensor(coord, sid, zid, "Coverage", "coverage", ("coverage",), unit="%", cast=int, state_class=SensorStateClass.MEASUREMENT))
+    if has("sleep"):
+        entities.append(GenericZoneValueSensor(coord, sid, zid, "Sleep", "sleep", ("sleep",), cast=int))
+    if has("aq_quality"):
+        entities.append(GenericZoneValueSensor(coord, sid, zid, "Air quality", "aq_quality", ("aq_quality",), cast=int))
+    if has("acs_temp", "tankTemp", "tank_temp"):
+        entities.append(GenericZoneValueSensor(coord, sid, zid, "DHW temperature", "acs_temp", ("acs_temp", "tankTemp", "tank_temp"), unit="°C", cast=float, device_class="temperature", state_class=SensorStateClass.MEASUREMENT))
+    if has("acs_setpoint", "tank_setpoint", "tankSetpoint"):
+        entities.append(GenericZoneValueSensor(coord, sid, zid, "DHW setpoint", "acs_setpoint", ("acs_setpoint", "tank_setpoint", "tankSetpoint"), unit="°C", cast=float, device_class="temperature", state_class=SensorStateClass.MEASUREMENT))
 
     # Unidades (0=°C, 1=°F)
     if has("units"):
@@ -1235,5 +1257,96 @@ class IAQNeedsVentSensor(_BaseIAQSensor):
             return None
         try:
             return i18n.label(self.coordinator.hass, "yes") if int(v) else i18n.label(self.coordinator.hass, "no")
+        except Exception:
+            return None
+
+
+
+def _first_present_value(data: dict, keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        value = data.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str) and value.strip().lower() in ("", "none", "nan"):
+            continue
+        return value
+    return None
+
+
+class GenericSystemValueSensor(_BaseSystemSensor):
+    def __init__(
+        self,
+        coordinator: AirzoneCoordinator,
+        system_id: int,
+        name: str,
+        uid_suffix: str,
+        keys: tuple[str, ...],
+        *,
+        unit: str | None = None,
+        cast=None,
+        device_class: str | None = None,
+        state_class: SensorStateClass | None = None,
+    ) -> None:
+        super().__init__(coordinator, system_id, uid_suffix, uid_suffix)
+        self._attr_name = None
+        self._fallback_name = name
+        self._keys = keys
+        self._cast = cast
+        if unit is not None:
+            self._attr_native_unit_of_measurement = unit
+        if device_class is not None:
+            self._attr_device_class = device_class
+        if state_class is not None:
+            self._attr_state_class = state_class
+
+    @property
+    def native_value(self) -> Any:
+        value = _first_present_value(_system_dict(self.coordinator, self._sid), self._keys)
+        if value is None:
+            return None
+        if self._cast is None:
+            return value
+        try:
+            return self._cast(value)
+        except Exception:
+            return None
+
+
+class GenericZoneValueSensor(_BaseZoneSensor):
+    def __init__(
+        self,
+        coordinator: AirzoneCoordinator,
+        system_id: int,
+        zone_id: int,
+        name: str,
+        uid_suffix: str,
+        keys: tuple[str, ...],
+        *,
+        unit: str | None = None,
+        cast=None,
+        device_class: str | None = None,
+        state_class: SensorStateClass | None = None,
+    ) -> None:
+        super().__init__(coordinator, system_id, zone_id, uid_suffix, uid_suffix)
+        self._attr_name = None
+        self._fallback_name = name
+        self._keys = keys
+        self._cast = cast
+        if unit is not None:
+            self._attr_native_unit_of_measurement = unit
+        if device_class is not None:
+            self._attr_device_class = device_class
+        if state_class is not None:
+            self._attr_state_class = state_class
+
+    @property
+    def native_value(self) -> Any:
+        value = _first_present_value(self._zone(), self._keys)
+        if value is None:
+            return None
+        if self._cast is None:
+            return value
+        try:
+            return self._cast(value)
         except Exception:
             return None

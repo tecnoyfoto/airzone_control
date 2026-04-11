@@ -24,6 +24,24 @@
       },
       "ventilation": {
         "name": "Ventilación"
+      },
+      "sleep": {
+        "name": "Reposo"
+      },
+      "slats_vertical": {
+        "name": "Lamas verticales"
+      },
+      "slats_horizontal": {
+        "name": "Lamas horizontales"
+      },
+      "slats_vswing": {
+        "name": "Oscilación vertical"
+      },
+      "slats_hswing": {
+        "name": "Oscilación horizontal"
+      },
+      "erv_mode": {
+        "name": "Modo ERV"
       }
     },
     "sensor": {
@@ -179,6 +197,36 @@
       },
       "airzone_iaq_ventmode": {
         "name": "Modo de ventilación IAQ"
+      },
+      "energy_consump": {
+        "name": "Consumo energético"
+      },
+      "energy_produced": {
+        "name": "Energía producida"
+      },
+      "power_gen_heat": {
+        "name": "Potencia de generación de calor"
+      },
+      "consumption_ue": {
+        "name": "Consumo UE"
+      },
+      "battery": {
+        "name": "Batería"
+      },
+      "coverage": {
+        "name": "Cobertura"
+      },
+      "sleep": {
+        "name": "Temporizador de reposo"
+      },
+      "aq_quality": {
+        "name": "Calidad del aire"
+      },
+      "acs_temp": {
+        "name": "Temperatura ACS"
+      },
+      "acs_setpoint": {
+        "name": "Consigna ACS"
       }
     },
     "sensor.airzone_system_id": "ID del sistema",
@@ -196,7 +244,38 @@
     "sensor.airzone_iaq_pressure": "Presión atmosférica",
     "sensor.airzone_iaq_index": "Índice de calidad del aire",
     "sensor.airzone_iaq_score": "Puntuación de calidad del aire",
-    "sensor.airzone_iaq_ventmode": "Modo de ventilación IAQ"
+    "sensor.airzone_iaq_ventmode": "Modo de ventilación IAQ",
+    "binary_sensor": {
+      "battery_low": {
+        "name": "Bater?a baja"
+      },
+      "open_window": {
+        "name": "Ventana abierta"
+      },
+      "antifreeze": {
+        "name": "Antihielo"
+      },
+      "cloud_connected": {
+        "name": "Nube conectada"
+      },
+      "mc_connected": {
+        "name": "MC conectado"
+      },
+      "needs_ventilation": {
+        "name": "Necesita ventilaci?n"
+      },
+      "cond_risk_master": {
+        "name": "Riesgo de condensaci?n (m?ster)"
+      }
+    },
+    "switch": {
+      "acs_power": {
+        "name": "Encendido ACS"
+      },
+      "acs_powerful": {
+        "name": "Modo potente ACS"
+      }
+    }
   },
   "config": {
     "step": {

@@ -14,6 +14,29 @@ Compared to the official integration, **Airzone Control**:
 
 ---
 
+## ? What?s new (v1.7.0)
+
+### Local API update for newer Airzone schemas
+- Improved Local API prefix detection for more Airzone Webserver/Aidoo variants.
+- Version discovery now uses `POST /version` for more reliable schema detection.
+- The coordinator now populates `systems` properly and exposes `get_system()` consistently.
+- Conservative driver registration via `/integration` when supported by the device.
+
+### New dynamic entities for supported hardware
+The integration now creates new entities only when the connected device actually exposes those fields:
+- **System sensors**: energy consumption, energy produced, heat generation power, UE consumption.
+- **Zone sensors**: battery level, coverage, sleep timer, air quality, DHW temperature, DHW setpoint.
+- **Zone selects**: sleep, vertical/horizontal slats, vertical/horizontal swing, ERV mode.
+- **Binary sensors**: low battery, antifreeze.
+- **ACS/DHW switches**: DHW power and DHW powerful mode.
+
+### Safe upgrade for existing installations
+- Existing climate/group/system logic is preserved.
+- Installations that do not expose ACS, slats, ERV or energy fields remain unchanged.
+- This release is still **Local API only**. Cloud API support is not included yet.
+
+---
+
 ## ✨ What’s new (v1.6.2)
 
 ### 🧩 Master thermostat & “Hotel” buttons (turn all on/off)

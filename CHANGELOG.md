@@ -2,6 +2,23 @@
 
 # Changelog
 
+## 1.7.0 - 2026-04-12
+
+### Added
+- New Local API compatibility layer for newer Airzone schemas and prefixes.
+- System sensors: `energy_consump`, `energy_produced`, `power_gen_heat`, `consumption_ue`.
+- Zone sensors: `battery`, `coverage`, `sleep`, `aq_quality`, `acs_temp`, `acs_setpoint`.
+- Zone selects: `sleep`, `slats_vertical`, `slats_horizontal`, `slats_vswing`, `slats_hswing`, `erv_mode`.
+- Binary sensors: `battery_low`, `antifreeze`.
+- ACS/DHW switches: `acs_power`, `acs_powerful`.
+- English and Spanish translation entries for the new entities.
+
+### Changed
+- System data is now populated in the coordinator and exposed through `get_system()`.
+- Version detection now uses `POST /version`.
+- Conservative `/integration` driver registration is attempted when supported.
+- New entities are created dynamically only when the hardware exposes the required fields, keeping existing installations stable.
+
 ## 1.6.2 - 2025-12-31
 
 ### Added
@@ -22,7 +39,7 @@
 
 ## 1.6.1 - 2025-12-21
 
-### Arreglado
+### Fixed
 - **Modo Global**: ahora replica el comportamiento de la app de Airzone.
   - El estado del modo global se basa en `mode` (no en `on`).
   - **Apagado/Stop**: aplica `mode=Stop` a nivel global y fuerza `on=0` en todas las zonas.

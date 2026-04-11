@@ -24,6 +24,24 @@
       },
       "ventilation": {
         "name": "Ventilation"
+      },
+      "sleep": {
+        "name": "Sleep"
+      },
+      "slats_vertical": {
+        "name": "Vertical slats"
+      },
+      "slats_horizontal": {
+        "name": "Horizontal slats"
+      },
+      "slats_vswing": {
+        "name": "Vertical swing"
+      },
+      "slats_hswing": {
+        "name": "Horizontal swing"
+      },
+      "erv_mode": {
+        "name": "ERV mode"
       }
     },
     "sensor": {
@@ -179,6 +197,36 @@
       },
       "airzone_iaq_ventmode": {
         "name": "IAQ ventilation mode"
+      },
+      "energy_consump": {
+        "name": "Energy consumption"
+      },
+      "energy_produced": {
+        "name": "Energy produced"
+      },
+      "power_gen_heat": {
+        "name": "Heat generation power"
+      },
+      "consumption_ue": {
+        "name": "UE consumption"
+      },
+      "battery": {
+        "name": "Battery level"
+      },
+      "coverage": {
+        "name": "Coverage"
+      },
+      "sleep": {
+        "name": "Sleep timer"
+      },
+      "aq_quality": {
+        "name": "Air quality"
+      },
+      "acs_temp": {
+        "name": "DHW temperature"
+      },
+      "acs_setpoint": {
+        "name": "DHW setpoint"
       }
     },
     "sensor.airzone_system_id": "System ID",
@@ -196,7 +244,38 @@
     "sensor.airzone_iaq_pressure": "Air pressure",
     "sensor.airzone_iaq_index": "Air quality index",
     "sensor.airzone_iaq_score": "Air quality score",
-    "sensor.airzone_iaq_ventmode": "IAQ ventilation mode"
+    "sensor.airzone_iaq_ventmode": "IAQ ventilation mode",
+    "binary_sensor": {
+      "battery_low": {
+        "name": "Low battery"
+      },
+      "open_window": {
+        "name": "Open window"
+      },
+      "antifreeze": {
+        "name": "Antifreeze"
+      },
+      "cloud_connected": {
+        "name": "Cloud connected"
+      },
+      "mc_connected": {
+        "name": "MC connected"
+      },
+      "needs_ventilation": {
+        "name": "Needs ventilation"
+      },
+      "cond_risk_master": {
+        "name": "Condensation risk (master)"
+      }
+    },
+    "switch": {
+      "acs_power": {
+        "name": "DHW power"
+      },
+      "acs_powerful": {
+        "name": "DHW powerful mode"
+      }
+    }
   },
   "config": {
     "step": {

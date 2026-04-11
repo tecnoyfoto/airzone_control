@@ -45,6 +45,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     # Webserver cloud
     entities.append(WebserverCloudConnectedBinary(coord))
 
+    for (sid, zid), zone in (coord.data or {}).items():
+        if "battery_low" in zone:
+            entities.append(ZoneBatteryBinary(coord, sid, zid))
+        if "antifreeze" in zone:
+            entities.append(ZoneAntifreezeBinary(coord, sid, zid))
+
     # MC connected por sistema (si lo reporta)
     for sid in sorted({sid for (sid, _) in (coord.data or {}).keys()}):
         entities.append(SystemMCConnectedBinary(coord, sid))
@@ -62,12 +68,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 class _ZoneBase(CoordinatorEntity[AirzoneCoordinator], BinarySensorEntity):
     _attr_should_poll = False
+    _attr_has_entity_name = True
 
-    def __init__(self, coordinator: AirzoneCoordinator, sid: int, zid: int, *, name: str, unique: str) -> None:
+    def __init__(self, coordinator: AirzoneCoordinator, sid: int, zid: int, *, name: str | None, unique: str) -> None:
         super().__init__(coordinator)
         self._sid = int(sid)
         self._zid = int(zid)
-        self._attr_name = name
+        if name is not None:
+            self._attr_name = name
         self._attr_unique_id = unique
 
     def _zone(self) -> dict:
@@ -91,7 +99,8 @@ class ZoneBatteryBinary(_ZoneBase):
     _attr_device_class = BinarySensorDeviceClass.BATTERY
 
     def __init__(self, coordinator: AirzoneCoordinator, sid: int, zid: int) -> None:
-        super().__init__(coordinator, sid, zid, name="Batería baja", unique=f"{DOMAIN}_zone_{sid}_{zid}_battery_low")
+        super().__init__(coordinator, sid, zid, name=None, unique=f"{DOMAIN}_zone_{sid}_{zid}_battery_low")
+        self._attr_translation_key = "battery_low"
 
     @property
     def is_on(self) -> bool | None:
@@ -102,22 +111,37 @@ class ZoneWindowBinary(_ZoneBase):
     _attr_device_class = BinarySensorDeviceClass.WINDOW
 
     def __init__(self, coordinator: AirzoneCoordinator, sid: int, zid: int) -> None:
-        super().__init__(coordinator, sid, zid, name="Ventana abierta", unique=f"{DOMAIN}_zone_{sid}_{zid}_open_window")
+        super().__init__(coordinator, sid, zid, name=None, unique=f"{DOMAIN}_zone_{sid}_{zid}_open_window")
+        self._attr_translation_key = "open_window"
 
     @property
     def is_on(self) -> bool | None:
         v = self._zone().get("open_window")
         return _as_bool(v)
 
+
+class ZoneAntifreezeBinary(_ZoneBase):
+    def __init__(self, coordinator: AirzoneCoordinator, sid: int, zid: int) -> None:
+        super().__init__(coordinator, sid, zid, name=None, unique=f"{DOMAIN}_zone_{sid}_{zid}_antifreeze")
+        self._attr_translation_key = "antifreeze"
+        self._attr_icon = "mdi:snowflake-thermometer"
+
+    @property
+    def is_on(self) -> bool | None:
+        v = self._zone().get("antifreeze")
+        return _as_bool(v)
+
 # --- webserver ---
 
 class WebserverCloudConnectedBinary(CoordinatorEntity[AirzoneCoordinator], BinarySensorEntity):
     _attr_should_poll = False
+    _attr_has_entity_name = True
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
 
     def __init__(self, coordinator: AirzoneCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_name = "Cloud conectado"
+        self._attr_name = None
+        self._attr_translation_key = "cloud_connected"
         self._attr_unique_id = f"{DOMAIN}_webserver_cloud_connected"
 
     @property
@@ -140,12 +164,14 @@ class WebserverCloudConnectedBinary(CoordinatorEntity[AirzoneCoordinator], Binar
 
 class SystemMCConnectedBinary(CoordinatorEntity[AirzoneCoordinator], BinarySensorEntity):
     _attr_should_poll = False
+    _attr_has_entity_name = True
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
 
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
         super().__init__(coordinator)
         self._sid = int(system_id)
-        self._attr_name = "MC conectado"
+        self._attr_name = None
+        self._attr_translation_key = "mc_connected"
         self._attr_unique_id = f"{DOMAIN}_system_{self._sid}_mc_connected"
 
     @property
@@ -167,6 +193,7 @@ class SystemMCConnectedBinary(CoordinatorEntity[AirzoneCoordinator], BinarySenso
 
 class IAQVentilationNeededBinary(CoordinatorEntity[AirzoneCoordinator], BinarySensorEntity):
     _attr_should_poll = False
+    _attr_has_entity_name = True
     _attr_icon = "mdi:fan-alert"
     _attr_name = None
 
@@ -174,7 +201,8 @@ class IAQVentilationNeededBinary(CoordinatorEntity[AirzoneCoordinator], BinarySe
         super().__init__(coordinator)
         self._sid = int(system_id)
         self._iid = int(iaq_id)
-        self._attr_name = "Necesita ventilación"
+        self._attr_name = None
+        self._attr_translation_key = "needs_ventilation"
         self._attr_unique_id = f"{DOMAIN}_iaq_{self._sid}_{self._iid}_vent_needed"
 
     def _iaq(self) -> dict:
@@ -205,13 +233,15 @@ class IAQVentilationNeededBinary(CoordinatorEntity[AirzoneCoordinator], BinarySe
 
 class CondensationRiskBinary(CoordinatorEntity[AirzoneCoordinator], BinarySensorEntity):
     _attr_should_poll = False
+    _attr_has_entity_name = True
     _attr_icon = "mdi:water-percent-alert"
     _attr_name = None
 
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
         super().__init__(coordinator)
         self._sid = int(system_id)
-        self._attr_name = "Riesgo de condensación (máster)"
+        self._attr_name = None
+        self._attr_translation_key = "cond_risk_master"
         self._attr_unique_id = f"{DOMAIN}_system_{self._sid}_condensation_risk"
 
     def _z(self) -> dict:

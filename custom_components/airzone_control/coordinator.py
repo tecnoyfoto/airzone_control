@@ -14,7 +14,8 @@ from .const import DOMAIN, DEFAULT_HOST, DEFAULT_PORT, DEFAULT_SCAN_INTERVAL
 _LOGGER = logging.getLogger(__name__)
 
 # Prefijos candidatos vistos en firmwares reales
-CANDIDATE_PREFIXES: list[str] = ["", "/api/v1"]
+CANDIDATE_PREFIXES: list[str] = ["", "/api/v1", "/airzone/local/api/v1", "/lapi/v1"]
+INTEGRATION_DRIVER = "homeassistant"
 
 class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
     """Coordinador de datos para Airzone Local API (1.76+ → 1.78)."""
@@ -60,6 +61,12 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
 
         # API version y WS info
         self.version: str | None = None
+        self.driver: str | None = None
+        self._integration_checked = False
+
+        # Recuperación ante lecturas vacías/intermitentes
+        self._hvac_empty_reads = 0
+        self._iaq_empty_reads = 0
 
     # ---------------- bases URL / sesión ----------------
     def _http_base(self) -> str:
@@ -174,6 +181,9 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
     async def _post_json(self, path: str, body: dict) -> dict | list | None:
         return await self._request_json("POST", path, body=body)
 
+    async def _put_json(self, path: str, body: dict) -> dict | list | None:
+        return await self._request_json("PUT", path, body=body)
+
     # ---------------- Normalizadores ----------------
 
     @staticmethod
@@ -197,9 +207,34 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
             out["window_external_source"] = val
 
         # Tipos numéricos más usados
-        for key in ("systemID", "zoneID", "on", "mode", "speed", "speeds",
-                    "heatStage", "coldStage", "heatStages", "coldStages", "units",
-                    "master_zoneID", "sleep", "double_sp"):
+        for key in (
+            "systemID",
+            "zoneID",
+            "on",
+            "mode",
+            "speed",
+            "speeds",
+            "heatStage",
+            "coldStage",
+            "heatStages",
+            "coldStages",
+            "units",
+            "master_zoneID",
+            "sleep",
+            "double_sp",
+            "battery_low",
+            "battery",
+            "coverage",
+            "aq_quality",
+            "antifreeze",
+            "slats_vertical",
+            "slats_horizontal",
+            "slats_vswing",
+            "slats_hswing",
+            "heatangle",
+            "coldangle",
+            "erv_mode",
+        ):
             if key in out:
                 try:
                     out[key] = int(out[key])
@@ -214,6 +249,29 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
             except Exception:
                 pass
 
+        return out
+
+    @staticmethod
+    def _normalize_system(s: dict) -> dict:
+        out = dict(s)
+        for key in (
+            "systemID",
+            "system_type",
+            "system_technology",
+            "num_airqsensors",
+            "mc_connected",
+            "energy_consump",
+            "energy_produced",
+            "power_gen_heat",
+            "consumption_ue",
+            "acs_power",
+            "erv_mode",
+        ):
+            if key in out:
+                try:
+                    out[key] = int(out[key])
+                except Exception:
+                    pass
         return out
 
     @staticmethod
@@ -282,6 +340,126 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
                 n = _norm(x); n and items.append(n)
 
         return items
+
+    @classmethod
+    def _extract_system_list(cls, payload: Any) -> list[dict]:
+        if not isinstance(payload, dict):
+            return []
+
+        items: list[dict] = []
+        systems = payload.get("systems")
+        if not isinstance(systems, list):
+            return items
+
+        for entry in systems:
+            if not isinstance(entry, dict):
+                continue
+
+            system = {k: v for k, v in entry.items() if k not in ("data", "zones")}
+            sid = system.get("systemID")
+            if sid is None:
+                data = entry.get("data")
+                if isinstance(data, list) and data:
+                    sid = data[0].get("systemID")
+                elif isinstance(data, dict):
+                    sid = data.get("systemID")
+                zones = entry.get("zones")
+                if sid is None and isinstance(zones, list) and zones:
+                    sid = zones[0].get("systemID")
+
+            if sid is None:
+                continue
+
+            try:
+                system["systemID"] = int(sid)
+            except Exception:
+                continue
+
+            items.append(cls._normalize_system(system))
+
+        return items
+
+    @staticmethod
+    def _derive_systems_from_zones(zones: list[dict]) -> dict[int, dict]:
+        systems: dict[int, dict] = {}
+        zone_system_keys = (
+            "system_firmware",
+            "system_type",
+            "system_technology",
+            "manufacturer",
+            "num_airqsensors",
+            "mc_connected",
+            "energy_consump",
+            "energy_produced",
+            "power_gen_heat",
+            "consumption_ue",
+            "acs_power",
+            "erv_mode",
+        )
+
+        for zone in zones:
+            try:
+                sid = int(zone.get("systemID"))
+            except Exception:
+                continue
+
+            system = systems.setdefault(sid, {"systemID": sid})
+            for key in zone_system_keys:
+                if key in zone and key not in system:
+                    system[key] = zone.get(key)
+
+        return systems
+
+    @staticmethod
+    def _extract_value(payload: Any, keys: tuple[str, ...]) -> Any:
+        if isinstance(payload, dict):
+            for key in keys:
+                if key in payload and payload.get(key) not in (None, ""):
+                    return payload.get(key)
+
+            data = payload.get("data")
+            if isinstance(data, dict):
+                value = AirzoneCoordinator._extract_value(data, keys)
+                if value not in (None, ""):
+                    return value
+
+            if isinstance(data, list):
+                for item in data:
+                    value = AirzoneCoordinator._extract_value(item, keys)
+                    if value not in (None, ""):
+                        return value
+
+        elif isinstance(payload, list):
+            for item in payload:
+                value = AirzoneCoordinator._extract_value(item, keys)
+                if value not in (None, ""):
+                    return value
+
+        return None
+
+    @classmethod
+    def _extract_version(cls, payload: Any) -> str | None:
+        value = cls._extract_value(
+            payload,
+            (
+                "version",
+                "api_ver",
+                "ws_firmware",
+                "firmware",
+                "app_version",
+                "localapi_version",
+            ),
+        )
+        if value in (None, ""):
+            return None
+        return str(value)
+
+    @classmethod
+    def _extract_driver(cls, payload: Any) -> str | None:
+        value = cls._extract_value(payload, ("driver",))
+        if value in (None, ""):
+            return None
+        return str(value)
 
     # ---------------- Perfiles/capacidades ----------------
 
@@ -354,6 +532,9 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
 
     def get_iaq(self, system_id: int, iaq_id: int) -> dict | None:
         return self.iaqs.get((int(system_id), int(iaq_id)))
+
+    def get_system(self, system_id: int) -> dict | None:
+        return self.systems.get(int(system_id))
 
     # --- Zona máster (heurística) ---
     def master_zone_id(self, system_id: int) -> Optional[int]:
@@ -433,10 +614,37 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
+    def _known_system_ids(self) -> list[int]:
+        """System IDs conocidos a partir del último estado válido."""
+        ids: set[int] = set()
+
+        for (sid, _zid) in (self.data or {}).keys():
+            try:
+                ids.add(int(sid))
+            except Exception:
+                pass
+
+        for (sid, _iid) in (self.iaqs or {}).keys():
+            try:
+                ids.add(int(sid))
+            except Exception:
+                pass
+
+        for sid in (self.system_profiles or {}).keys():
+            try:
+                ids.add(int(sid))
+            except Exception:
+                pass
+
+        if not ids:
+            ids.add(1)
+
+        return sorted(ids)
+
     # ---------------- fetchers ----------------
 
     async def _fetch_hvac_all(self) -> list[dict]:
-        """Lee todas las zonas de todos los sistemas (broadcast), con soporte 1.77/1.78."""
+        """Lee todas las zonas de todos los sistemas (broadcast) con fallback por systemID real."""
         # 1) GET con systemid=127 (broadcast documentado) y zoneid=0
         try:
             p = await self._get_json("/hvac", params={"systemid": 127, "zoneid": 0})
@@ -465,10 +673,38 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
             self.transport_hvac = "POST(127)"
             return p
 
-        # 4) POST con systemID=0 (último intento)
+        # 4) POST con systemID=0
         p = await self._post_json("/hvac", {"systemID": 0, "zoneID": 0})
-        self.transport_hvac = "POST(0)"
-        return p
+        if isinstance(p, (dict, list)) and self._extract_zone_list(p):
+            self.transport_hvac = "POST(0)"
+            return p
+
+        # 5) Fallback por systemID reales conocidos (sin tocar la lógica de control/PUT)
+        combined: list[dict] = []
+        seen: set[tuple[int, int]] = set()
+        used_ids: list[int] = []
+        for sid in self._known_system_ids():
+            payload = await self._fetch_hvac_system(sid)
+            items = self._extract_zone_list(payload) if isinstance(payload, (dict, list)) else []
+            if not items:
+                continue
+            used_ids.append(sid)
+            for item in items:
+                try:
+                    key = (int(item.get("systemID")), int(item.get("zoneID")))
+                except Exception:
+                    continue
+                if key in seen:
+                    continue
+                seen.add(key)
+                combined.append(item)
+
+        if combined:
+            self.transport_hvac = f"SYSTEM({','.join(str(s) for s in used_ids)})"
+            return {"data": combined}
+
+        self.transport_hvac = "EMPTY"
+        return {"data": []}
 
     async def _fetch_hvac_system(self, sid: int) -> dict | None:
         try:
@@ -484,7 +720,7 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
             return None
 
     async def _fetch_iaq_all(self) -> list[dict]:
-        """Lee todos los IAQ (broadcast)."""
+        """Lee todos los IAQ (broadcast) con fallback por systemID real."""
         items: list[dict] = []
         self.transport_iaq = None
 
@@ -510,7 +746,31 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
             except Exception as e:
                 _LOGGER.debug("IAQ POST broadcast(%s) failed: %s", val, e)
 
-        return items
+        # 3) Fallback por systemID reales conocidos
+        combined: list[dict] = []
+        seen: set[tuple[int, int]] = set()
+        used_ids: list[int] = []
+        for sid in self._known_system_ids():
+            sys_items = await self._fetch_iaq_system(sid)
+            if not sys_items:
+                continue
+            used_ids.append(sid)
+            for item in sys_items:
+                try:
+                    key = (int(item.get("systemID")), int(item.get("iaqsensorID")))
+                except Exception:
+                    continue
+                if key in seen:
+                    continue
+                seen.add(key)
+                combined.append(item)
+
+        if combined:
+            self.transport_iaq = f"SYSTEM({','.join(str(s) for s in used_ids)})"
+            return combined
+
+        self.transport_iaq = "EMPTY"
+        return []
 
     async def _fetch_iaq_system(self, sid: int) -> list[dict]:
         try:
@@ -526,6 +786,37 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
             _LOGGER.debug("IAQ system %s fetch failed: %s", sid, e)
             return []
 
+    async def _ensure_integration_driver(self) -> None:
+        if self._integration_checked:
+            return
+
+        self._integration_checked = True
+
+        try:
+            info = await self._post_json("/integration", {})
+        except Exception as err:
+            _LOGGER.debug("Integration driver check failed: %s", err)
+            return
+
+        current = self._extract_driver(info)
+        if current:
+            self.driver = current
+
+        if current and current.lower() not in ("integrator", INTEGRATION_DRIVER):
+            _LOGGER.info("Leaving existing Airzone integration driver unchanged: %s", current)
+            return
+
+        if current and current.lower() == INTEGRATION_DRIVER:
+            return
+
+        try:
+            result = await self._put_json("/integration", {"driver": INTEGRATION_DRIVER})
+            updated = self._extract_driver(result)
+            if updated:
+                self.driver = updated
+        except Exception as err:
+            _LOGGER.debug("Integration driver registration failed: %s", err)
+
     # ---------------- update ----------------
 
     async def _async_update_data(self) -> dict[Tuple[int,int], dict]:
@@ -535,8 +826,35 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
         except Exception as e:
             raise UpdateFailed(f"HVAC fetch error: {e}") from e
 
-        mapped = self._map_zones(self._extract_zone_list(hvac_payload) or [])
-        self.data = mapped
+        extracted_zones = self._extract_zone_list(hvac_payload) or []
+        mapped = self._map_zones(extracted_zones)
+        if mapped:
+            self.data = mapped
+            self._hvac_empty_reads = 0
+        else:
+            self._hvac_empty_reads += 1
+            if self.data:
+                mapped = self.data
+                _LOGGER.warning(
+                    "HVAC update came back empty; keeping last valid state (empty_reads=%s, transport=%s)",
+                    self._hvac_empty_reads,
+                    self.transport_hvac,
+                )
+            else:
+                raise UpdateFailed("HVAC update returned no valid zones")
+
+        extracted_systems = self._extract_system_list(hvac_payload)
+        systems: dict[int, dict] = {
+            int(item["systemID"]): item for item in extracted_systems if "systemID" in item
+        }
+        derived_systems = self._derive_systems_from_zones(extracted_zones)
+        for sid, data in derived_systems.items():
+            base = systems.setdefault(sid, {"systemID": sid})
+            for key, value in data.items():
+                base.setdefault(key, value)
+        for sid in {sid for (sid, _zid) in mapped.keys()}:
+            systems.setdefault(int(sid), {"systemID": int(sid)})
+        self.systems = systems
 
         # 2) Webserver info (GET con fallback a POST)
         try:
@@ -545,23 +863,47 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
                 ws = await self._post_json("/webserver", {})
             if isinstance(ws, dict):
                 self.webserver = ws
-                v = ws.get("api_ver") or ws.get("version") or ws.get("ws_firmware")
-                if isinstance(v, str) and v:
-                    self.version = v
         except Exception as e:
             _LOGGER.debug("Webserver fetch error: %s", e)
-            self.webserver = None
+
+        try:
+            version_payload = await self._post_json("/version", {})
+            detected_version = self._extract_version(version_payload)
+            if detected_version:
+                self.version = detected_version
+        except Exception as e:
+            _LOGGER.debug("Version fetch error: %s", e)
+
+        if not self.version and isinstance(self.webserver, dict):
+            detected_version = self._extract_version(self.webserver)
+            if detected_version:
+                self.version = detected_version
+
+        await self._ensure_integration_driver()
 
         # 3) IAQ
-        self.iaqs = {}
         iaq_items = await self._fetch_iaq_all()
+        new_iaqs: dict[tuple[int, int], dict] = {}
         for item in iaq_items:
             try:
                 sid = int(item.get("systemID"))
                 iid = int(item.get("iaqsensorID"))
-                self.iaqs[(sid, iid)] = item
+                new_iaqs[(sid, iid)] = item
             except Exception:
                 continue
+
+        if new_iaqs:
+            self.iaqs = new_iaqs
+            self._iaq_empty_reads = 0
+        elif self.iaqs:
+            self._iaq_empty_reads += 1
+            _LOGGER.warning(
+                "IAQ update came back empty; keeping last valid IAQ state (empty_reads=%s, transport=%s)",
+                self._iaq_empty_reads,
+                self.transport_iaq,
+            )
+        else:
+            self.iaqs = {}
 
         # 4) Perfiles de sistema
         system_ids = sorted({sid for (sid, _z) in mapped.keys()})

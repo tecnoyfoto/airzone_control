@@ -53,6 +53,19 @@ async def async_setup_entry(
         except Exception:
             pass
 
+        if "sleep" in z or isinstance(z.get("sleep_values"), list):
+            entities.append(ZoneFieldSelect(coord, sid, zid, name="Sleep", unique_suffix="sleep", field="sleep", values_key="sleep_values", default_values=[0, 30, 60, 90, 120], labels={0: i18n.label(coord.hass, "off")}))
+        if "slats_vertical" in z:
+            entities.append(ZoneFieldSelect(coord, sid, zid, name="Vertical slats", unique_suffix="slats_vertical", field="slats_vertical", values_key="slats_v_values", default_values=[0, 1, 2, 3]))
+        if "slats_horizontal" in z:
+            entities.append(ZoneFieldSelect(coord, sid, zid, name="Horizontal slats", unique_suffix="slats_horizontal", field="slats_horizontal", values_key="slats_h_values", default_values=[0, 1, 2, 3]))
+        if "slats_vswing" in z:
+            entities.append(ZoneFieldSelect(coord, sid, zid, name="Vertical swing", unique_suffix="slats_vswing", field="slats_vswing", default_values=[0, 1], labels={0: i18n.label(coord.hass, "off"), 1: i18n.label(coord.hass, "swing")}))
+        if "slats_hswing" in z:
+            entities.append(ZoneFieldSelect(coord, sid, zid, name="Horizontal swing", unique_suffix="slats_hswing", field="slats_hswing", default_values=[0, 1], labels={0: i18n.label(coord.hass, "off"), 1: i18n.label(coord.hass, "swing")}))
+        if "erv_mode" in z or isinstance(z.get("erv_mode_values"), list):
+            entities.append(ZoneFieldSelect(coord, sid, zid, name="ERV mode", unique_suffix="erv_mode", field="erv_mode", values_key="erv_mode_values"))
+
     # IAQ: Modo de ventilación
     if isinstance(getattr(coord, "iaqs", None), dict):
         for (sid, iid), _iaq in coord.iaqs.items():
@@ -519,6 +532,112 @@ class IAQVentModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
             _LOGGER.debug("Opción de ventilación IAQ no válida: %s", option)
             return
         await self.coordinator.async_set_iaq_params(self._sid, self._iid, iaq_mode_vent=int(code))
+
+    def _handle_coordinator_update(self) -> None:
+        self.async_write_ha_state()
+
+
+
+class ZoneFieldSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: AirzoneCoordinator,
+        system_id: int,
+        zone_id: int,
+        *,
+        name: str,
+        unique_suffix: str,
+        field: str,
+        values_key: str | None = None,
+        default_values: list[int] | None = None,
+        labels: dict[int, str] | None = None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._sid = int(system_id)
+        self._zid = int(zone_id)
+        self._field = field
+        self._values_key = values_key
+        self._default_values = list(default_values or [])
+        self._labels = dict(labels or {})
+        self._attr_translation_key = unique_suffix
+        self._attr_name = None
+        self._fallback_name = name
+        self._attr_unique_id = f"{DOMAIN}_zone_{self._sid}_{self._zid}_{unique_suffix}"
+
+    def _zone(self) -> dict:
+        return self.coordinator.get_zone(self._sid, self._zid) or {}
+
+    def _values(self) -> List[int]:
+        zone = self._zone()
+        values: List[int] = []
+
+        if self._values_key:
+            raw = zone.get(self._values_key)
+            if isinstance(raw, list):
+                for item in raw:
+                    try:
+                        value = int(item)
+                    except Exception:
+                        continue
+                    if value not in values:
+                        values.append(value)
+
+        if not values:
+            values = list(self._default_values)
+
+        current = zone.get(self._field)
+        try:
+            current_value = int(current)
+        except Exception:
+            current_value = None
+        if current_value is not None and current_value not in values:
+            values.append(current_value)
+
+        return values
+
+    def _label_for(self, value: int) -> str:
+        return self._labels.get(value, str(value))
+
+    def _value_for_option(self, option: str) -> Optional[int]:
+        for value in self._values():
+            if self._label_for(value) == option:
+                return value
+        return None
+
+    @property
+    def available(self) -> bool:
+        return bool(self._zone()) and bool(self._values())
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        z = self._zone()
+        name = z.get("name") or f"Zona {self._sid}/{self._zid}"
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"{self._sid}-{self._zid}")},
+            name=name,
+            manufacturer="Airzone",
+            model="Local API zone",
+        )
+
+    @property
+    def options(self) -> List[str]:
+        return [self._label_for(value) for value in self._values()]
+
+    @property
+    def current_option(self) -> Optional[str]:
+        try:
+            return self._label_for(int(self._zone().get(self._field)))
+        except Exception:
+            return None
+
+    async def async_select_option(self, option: str) -> None:
+        value = self._value_for_option(str(option or "").strip())
+        if value is None:
+            return
+        await self.coordinator.async_set_zone_params(self._sid, self._zid, **{self._field: int(value)})
 
     def _handle_coordinator_update(self) -> None:
         self.async_write_ha_state()

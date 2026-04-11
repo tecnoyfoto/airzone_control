@@ -14,6 +14,29 @@ A diferencia de la integración oficial, **Airzone Control**:
 
 ---
 
+## ? Novedades (v1.7.0)
+
+### Actualizaci?n de la Local API para esquemas Airzone m?s nuevos
+- Mejora de la detecci?n de prefijos de Local API para m?s variantes de Airzone Webserver/Aidoo.
+- La detecci?n de versi?n ahora usa `POST /version` para identificar el esquema con m?s fiabilidad.
+- El coordinator ahora puebla `systems` correctamente y expone `get_system()` de forma consistente.
+- Registro prudente del driver mediante `/integration` cuando el equipo lo soporta.
+
+### Nuevas entidades din?micas para hardware compatible
+La integraci?n crea estas entidades solo cuando el dispositivo conectado expone realmente esos campos:
+- **Sensores de sistema**: consumo energ?tico, energ?a producida, potencia de generaci?n de calor, consumo UE.
+- **Sensores de zona**: bater?a, cobertura, temporizador de reposo, calidad del aire, temperatura ACS, consigna ACS.
+- **Selects de zona**: reposo, lamas verticales/horizontales, oscilaci?n vertical/horizontal, modo ERV.
+- **Sensores binarios**: bater?a baja, antihielo.
+- **Switches ACS**: encendido ACS y modo potente ACS.
+
+### Actualizaci?n segura para instalaciones existentes
+- Se mantiene la l?gica actual de clima, grupos y sistema.
+- Si tu instalaci?n no expone ACS, lamas, ERV o datos energ?ticos, no aparecer?n entidades nuevas.
+- Esta versi?n sigue siendo solo **Local API**. Todav?a no incluye soporte Cloud API.
+
+---
+
 ## ✨ Novedades (v1.6.2)
 
 ### 🧩 Termostato maestro y botones “Hotel” (encender/apagar todo)
