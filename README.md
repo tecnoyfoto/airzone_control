@@ -14,7 +14,7 @@ Compared to the official integration, **Airzone Control**:
 
 ---
 
-## ? What?s new (v1.7.0)
+## ✨ What’s new (v1.7.0)
 
 ### Local API update for newer Airzone schemas
 - Improved Local API prefix detection for more Airzone Webserver/Aidoo variants.
