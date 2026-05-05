@@ -24,6 +24,24 @@
       },
       "ventilation": {
         "name": "Aireztapena"
+      },
+      "sleep": {
+        "name": "Sleep"
+      },
+      "slats_vertical": {
+        "name": "Vertical slats"
+      },
+      "slats_horizontal": {
+        "name": "Horizontal slats"
+      },
+      "slats_vswing": {
+        "name": "Vertical swing"
+      },
+      "slats_hswing": {
+        "name": "Horizontal swing"
+      },
+      "erv_mode": {
+        "name": "ERV mode"
       }
     },
     "sensor": {
@@ -179,6 +197,36 @@
       },
       "airzone_iaq_ventmode": {
         "name": "IAQ aireztapen modua"
+      },
+      "energy_consump": {
+        "name": "Energy consumption"
+      },
+      "energy_produced": {
+        "name": "Energy produced"
+      },
+      "power_gen_heat": {
+        "name": "Heat generation power"
+      },
+      "consumption_ue": {
+        "name": "UE consumption"
+      },
+      "battery": {
+        "name": "Battery level"
+      },
+      "coverage": {
+        "name": "Coverage"
+      },
+      "sleep": {
+        "name": "Sleep timer"
+      },
+      "aq_quality": {
+        "name": "Air quality"
+      },
+      "acs_temp": {
+        "name": "DHW temperature"
+      },
+      "acs_setpoint": {
+        "name": "DHW setpoint"
       }
     },
     "sensor.airzone_system_id": "Sistemaren ID",
@@ -196,7 +244,38 @@
     "sensor.airzone_iaq_pressure": "Aire-presioa",
     "sensor.airzone_iaq_index": "Airearen kalitate-indizea",
     "sensor.airzone_iaq_score": "Airearen kalitate-puntuazioa",
-    "sensor.airzone_iaq_ventmode": "IAQ aireztapen modua"
+    "sensor.airzone_iaq_ventmode": "IAQ aireztapen modua",
+    "binary_sensor": {
+      "battery_low": {
+        "name": "Low battery"
+      },
+      "open_window": {
+        "name": "Open window"
+      },
+      "antifreeze": {
+        "name": "Antifreeze"
+      },
+      "cloud_connected": {
+        "name": "Cloud connected"
+      },
+      "mc_connected": {
+        "name": "MC connected"
+      },
+      "needs_ventilation": {
+        "name": "Needs ventilation"
+      },
+      "cond_risk_master": {
+        "name": "Condensation risk (master)"
+      }
+    },
+    "switch": {
+      "acs_power": {
+        "name": "DHW power"
+      },
+      "acs_powerful": {
+        "name": "DHW powerful mode"
+      }
+    }
   },
   "config": {
     "step": {
@@ -205,7 +284,8 @@
         "description": "Konektatu zure Airzone Local APIra (web zerbitzaria).",
         "data": {
           "host": "Host",
-          "port": "Portua"
+          "port": "Portua",
+          "connection_type": "Connection type"
         }
       },
       "prefix": {
@@ -214,11 +294,43 @@
         "data": {
           "api_prefix": "API aurrizkia"
         }
+      },
+      "local": {
+        "title": "Airzone Control - Local API",
+        "description": "Connect to your Airzone Local API (webserver).",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      },
+      "cloud": {
+        "title": "Airzone Control - Cloud API",
+        "description": "Sign in with your Airzone Cloud account.",
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "cloud_profile": "Cloud profile",
+          "cloud_include_categories": "Cloud categories to include",
+          "cloud_include_device_ids": "Cloud devices to include",
+          "cloud_include_bound_iaqs": "Include IAQ sensors linked to systems or zones",
+          "cloud_exclude_iaq_names": "IAQ sensor names to exclude"
+        }
+      },
+      "cloud_devices": {
+        "title": "Airzone Control - Cloud devices",
+        "description": "Select the Cloud devices this entry should expose.",
+        "data": {
+          "cloud_include_device_ids": "Cloud devices to include"
+        }
       }
     },
     "error": {
       "cannot_connect": "Ezin da konektatu. Egiaztatu host/portua eta Airzone web zerbitzaria eskuragarri dagoela.",
-      "no_host": "Sartu host bat."
+      "no_host": "Sartu host bat.",
+      "no_email": "Please enter an email.",
+      "no_password": "Please enter a password.",
+      "invalid_auth": "Invalid Airzone Cloud credentials.",
+      "user_not_confirmed": "Your Airzone Cloud account is not confirmed yet."
     },
     "abort": {
       "already_configured": "Host hau dagoeneko konfiguratuta dago."
@@ -246,7 +358,12 @@
           "group_7_zones": "7. taldea - Zonak",
           "group_8_name": "8. taldea - Izena",
           "group_8_zones": "8. taldea - Zonak",
-          "groups_json": "Taldeak (JSON aurreratua)"
+          "groups_json": "Taldeak (JSON aurreratua)",
+          "cloud_profile": "Cloud profile",
+          "cloud_include_categories": "Cloud categories to include",
+          "cloud_include_device_ids": "Cloud devices to include",
+          "cloud_include_bound_iaqs": "Include IAQ sensors linked to systems or zones",
+          "cloud_exclude_iaq_names": "IAQ sensor names to exclude"
         },
         "description": "Sortu gehienez 8 talde logiko izen batekin eta zonak hautatuz. Instalazio handietarako, erabili JSON aurreratua (UI-ko taldeek baino lehentasun handiagoa du)."
       }

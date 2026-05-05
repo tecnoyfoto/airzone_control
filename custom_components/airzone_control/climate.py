@@ -120,21 +120,27 @@ class AirzoneZoneClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
         self._system_id = int(system_id)
         self._zone_id = int(zone_id)
         self._attr_name = name
-        self._attr_unique_id = f"{DOMAIN}_climate_{self._system_id}_{self._zone_id}"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_climate_{self._system_id}_{self._zone_id}")
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_supported_features = (
-            ClimateEntityFeature.TARGET_TEMPERATURE
-            | ClimateEntityFeature.TURN_ON
-            | ClimateEntityFeature.TURN_OFF
+            0
+            if getattr(coordinator, "read_only", False)
+            else (
+                ClimateEntityFeature.TARGET_TEMPERATURE
+                | ClimateEntityFeature.TURN_ON
+                | ClimateEntityFeature.TURN_OFF
+            )
         )
 
     @property
     def device_info(self) -> DeviceInfo:
+        z = self._zone() or {}
+        model = z.get("cloud_device_type") or ("Cloud zone" if z.get("cloud_device_id") else "Local API zone")
         return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._system_id}-{self._zone_id}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"{self._system_id}-{self._zone_id}"))},
             name=self.name,
             manufacturer="Airzone",
-            model="Local API zone",
+            model=model,
         )
 
     # ---------- Helpers ----------
@@ -205,8 +211,10 @@ class AirzoneZoneClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
         z = self._zone()
         if not z:
             return [HVACMode.OFF]
-        modes = allowed_hvac_modes_for_zone(z)
-        return modes or [HVACMode.OFF]
+        modes = allowed_hvac_modes_for_zone(z) or [HVACMode.OFF]
+        if getattr(self.coordinator, "read_only", False):
+            return [translate_current_mode(z, modes)]
+        return modes
 
     @property
     def hvac_mode(self) -> HVACMode:
@@ -309,21 +317,26 @@ class AirzoneMasterClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity)
         self._system_id = int(system_id)
         self._zone_ids: List[int] = [int(z) for z in zone_ids]
         self._attr_name = f"Termostato Maestro S{self._system_id}"
-        self._attr_unique_id = f"{DOMAIN}_master_{self._system_id}"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_master_{self._system_id}")
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_supported_features = (
-            ClimateEntityFeature.TARGET_TEMPERATURE
-            | ClimateEntityFeature.TURN_ON
-            | ClimateEntityFeature.TURN_OFF
+            0
+            if getattr(coordinator, "read_only", False)
+            else (
+                ClimateEntityFeature.TARGET_TEMPERATURE
+                | ClimateEntityFeature.TURN_ON
+                | ClimateEntityFeature.TURN_OFF
+            )
         )
 
     @property
     def device_info(self) -> DeviceInfo:
+        model = "Cloud system" if getattr(self.coordinator, "connection_type", "local") == "cloud" else "Local API system"
         return DeviceInfo(
-            identifiers={(DOMAIN, f"master-{self._system_id}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"master-{self._system_id}"))},
             name=f"Airzone System {self._system_id}",
             manufacturer="Airzone",
-            model="Local API system",
+            model=model,
         )
 
     def _zones(self) -> List[dict]:
@@ -419,7 +432,19 @@ class AirzoneMasterClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity)
         common = set.intersection(*mode_sets) if mode_sets else {HVACMode.OFF}
         if HVACMode.OFF not in common:
             common.add(HVACMode.OFF)
-        return list(common)
+        resolved = list(common)
+        if getattr(self.coordinator, "read_only", False):
+            current: HVACMode | None = None
+            for z in zones:
+                try:
+                    if int(z.get("on", 1)) != 0:
+                        current = translate_current_mode(z, resolved)
+                        break
+                except Exception:
+                    current = translate_current_mode(z, resolved)
+                    break
+            return [current or HVACMode.OFF]
+        return resolved
 
     @property
     def hvac_mode(self) -> HVACMode:
@@ -557,12 +582,16 @@ class AirzoneGroupClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
             (int(sid), int(zid)) for sid, zid in members
         ]
         self._attr_name = name
-        self._attr_unique_id = f"{DOMAIN}_group_{self._group_id}"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_group_{self._group_id}")
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_supported_features = (
-            ClimateEntityFeature.TARGET_TEMPERATURE
-            | ClimateEntityFeature.TURN_ON
-            | ClimateEntityFeature.TURN_OFF
+            0
+            if getattr(coordinator, "read_only", False)
+            else (
+                ClimateEntityFeature.TARGET_TEMPERATURE
+                | ClimateEntityFeature.TURN_ON
+                | ClimateEntityFeature.TURN_OFF
+            )
         )
 
     # ---------- Helpers ----------
@@ -601,7 +630,7 @@ class AirzoneGroupClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
     @property
     def device_info(self) -> DeviceInfo:
         return DeviceInfo(
-            identifiers={(DOMAIN, f"group-{self._group_id}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"group-{self._group_id}"))},
             name=self.name,
             manufacturer="Airzone",
             model="Logical group",
@@ -669,7 +698,19 @@ class AirzoneGroupClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
         common = set.intersection(*mode_sets) if mode_sets else {HVACMode.OFF}
         if HVACMode.OFF not in common:
             common.add(HVACMode.OFF)
-        return list(common)
+        resolved = list(common)
+        if getattr(self.coordinator, "read_only", False):
+            current: HVACMode | None = None
+            for z in zones:
+                try:
+                    if int(z.get("on", 1)) != 0:
+                        current = translate_current_mode(z, resolved)
+                        break
+                except Exception:
+                    current = translate_current_mode(z, resolved)
+                    break
+            return [current or HVACMode.OFF]
+        return resolved
 
     @property
     def hvac_mode(self) -> HVACMode:

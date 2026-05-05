@@ -104,6 +104,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     if not isinstance(coord, AirzoneCoordinator):
         return
 
+    if getattr(coord, "read_only", False):
+        return
+
     entities: list[SwitchEntity] = []
     for sid in sorted({sid for (sid, _) in (coord.data or {}).keys()}):
         entities.append(SystemOnOffSwitch(coord, sid))
@@ -137,7 +140,7 @@ class _SystemBase(CoordinatorEntity[AirzoneCoordinator], SwitchEntity):
     @property
     def device_info(self) -> DeviceInfo:
         return DeviceInfo(
-            identifiers={(DOMAIN, f"system-{self._sid}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"system-{self._sid}"))},
             name=f"Sistema {self._sid}",
             manufacturer="Airzone",
             model="HVAC System",
@@ -151,7 +154,7 @@ class SystemOnOffSwitch(_SystemBase):
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
         super().__init__(coordinator, system_id)
         self._attr_name = f"Sistema {self._sid} - Encendido"
-        self._attr_unique_id = f"{DOMAIN}_system_onoff_{self._sid}"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_system_onoff_{self._sid}")
 
     @property
     def is_on(self) -> bool:
@@ -184,7 +187,7 @@ class SystemEcoModeSwitch(_SystemBase):
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
         super().__init__(coordinator, system_id)
         self._attr_name = f"Sistema {self._sid} - ECO"
-        self._attr_unique_id = f"{DOMAIN}_system_eco_{self._sid}"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_system_eco_{self._sid}")
 
     @property
     def is_on(self) -> bool:
@@ -230,7 +233,7 @@ class SystemACSPowerSwitch(_SystemBase):
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
         super().__init__(coordinator, system_id)
         self._attr_name = None
-        self._attr_unique_id = f"{DOMAIN}_system_acs_power_{self._sid}"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_system_acs_power_{self._sid}")
 
     @property
     def available(self) -> bool:
@@ -266,7 +269,7 @@ class SystemACSPowerfulSwitch(_SystemBase):
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
         super().__init__(coordinator, system_id)
         self._attr_name = None
-        self._attr_unique_id = f"{DOMAIN}_system_acs_powerful_{self._sid}"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_system_acs_powerful_{self._sid}")
 
     @property
     def available(self) -> bool:
@@ -300,7 +303,7 @@ class SystemFollowMasterSwitch(_SystemBase):
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
         super().__init__(coordinator, system_id)
         self._attr_name = f"Sistema {self._sid} - Modo Hotel (Seguir global)"
-        self._attr_unique_id = f"{DOMAIN}_system_follow_master_{self._sid}"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_system_follow_master_{self._sid}")
 
     @property
     def is_on(self) -> bool:

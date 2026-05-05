@@ -37,6 +37,9 @@ async def async_setup_entry(
         _LOGGER.warning("AirzoneCoordinator not found; aborting button setup.")
         return
 
+    if getattr(coord, "read_only", False):
+        return
+
     system_ids = sorted({sid for (sid, _zid) in (coord.data or {}).keys()})
     entities: List[ButtonEntity] = []
     for sid in system_ids:
@@ -71,7 +74,7 @@ class _SystemButton(CoordinatorEntity[AirzoneCoordinator], ButtonEntity):
     def device_info(self) -> DeviceInfo:
         # El nombre del DISPOSITIVO es la etiqueta de sistema; el nombre de la entidad lo aporta translation_key
         return DeviceInfo(
-            identifiers={(DOMAIN, f"system-{self._sid}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"system-{self._sid}"))},
             name=f"Sistema {self._sid}",
             manufacturer="Airzone",
             model="HVAC System",
@@ -174,7 +177,7 @@ class HotelTurnAllOffButton(_SystemButton):
 
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
         super().__init__(coordinator, system_id)
-        self._attr_unique_id = f"{DOMAIN}_system_{self._sid}_hotel_off_all"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_system_{self._sid}_hotel_off_all")
 
     async def async_press(self) -> None:
         zones = self._zones()
@@ -190,7 +193,7 @@ class HotelTurnAllOnButton(_SystemButton):
 
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
         super().__init__(coordinator, system_id)
-        self._attr_unique_id = f"{DOMAIN}_system_{self._sid}_hotel_on_all"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_system_{self._sid}_hotel_on_all")
 
     async def async_press(self) -> None:
         zones = self._zones()
@@ -206,7 +209,7 @@ class HotelCopySetpointButton(_SystemButton):
 
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
         super().__init__(coordinator, system_id)
-        self._attr_unique_id = f"{DOMAIN}_system_{self._sid}_hotel_copy_sp"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_system_{self._sid}_hotel_copy_sp")
 
     async def async_press(self) -> None:
         def _sfloat(d: dict, k: str) -> Optional[float]:

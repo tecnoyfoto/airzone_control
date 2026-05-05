@@ -42,12 +42,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
     entities: list[BinarySensorEntity] = []
 
-    # Webserver cloud
-    entities.append(WebserverCloudConnectedBinary(coord))
+    # Webserver cloud/local diagnostics
+    if getattr(coord, "expose_webserver_entities", True):
+        entities.append(WebserverCloudConnectedBinary(coord))
 
     for (sid, zid), zone in (coord.data or {}).items():
         if "battery_low" in zone:
             entities.append(ZoneBatteryBinary(coord, sid, zid))
+        if "open_window" in zone:
+            entities.append(ZoneWindowBinary(coord, sid, zid))
         if "antifreeze" in zone:
             entities.append(ZoneAntifreezeBinary(coord, sid, zid))
 
@@ -76,7 +79,7 @@ class _ZoneBase(CoordinatorEntity[AirzoneCoordinator], BinarySensorEntity):
         self._zid = int(zid)
         if name is not None:
             self._attr_name = name
-        self._attr_unique_id = unique
+        self._attr_unique_id = coordinator.scoped_unique_id(unique)
 
     def _zone(self) -> dict:
         return self.coordinator.get_zone(self._sid, self._zid) or {}
@@ -88,11 +91,12 @@ class _ZoneBase(CoordinatorEntity[AirzoneCoordinator], BinarySensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         z = self._zone()
+        model = z.get("cloud_device_type") or ("Cloud zone" if z.get("cloud_device_id") else "Local API zone")
         return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._sid}-{self._zid}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"{self._sid}-{self._zid}"))},
             name=z.get("name") or f"Zone {self._sid}/{self._zid}",
             manufacturer="Airzone",
-            model="Local API zone",
+            model=model,
         )
 
 class ZoneBatteryBinary(_ZoneBase):
@@ -142,7 +146,7 @@ class WebserverCloudConnectedBinary(CoordinatorEntity[AirzoneCoordinator], Binar
         super().__init__(coordinator)
         self._attr_name = None
         self._attr_translation_key = "cloud_connected"
-        self._attr_unique_id = f"{DOMAIN}_webserver_cloud_connected"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_webserver_cloud_connected")
 
     @property
     def is_on(self) -> bool | None:
@@ -154,7 +158,7 @@ class WebserverCloudConnectedBinary(CoordinatorEntity[AirzoneCoordinator], Binar
     def device_info(self) -> DeviceInfo:
         ws = self.coordinator.webserver or {}
         info = DeviceInfo(
-            identifiers={(DOMAIN, "webserver")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier("webserver"))},
             name="Airzone Webserver",
             manufacturer="Airzone",
             model=ws.get("ws_type", "Webserver"),
@@ -172,7 +176,7 @@ class SystemMCConnectedBinary(CoordinatorEntity[AirzoneCoordinator], BinarySenso
         self._sid = int(system_id)
         self._attr_name = None
         self._attr_translation_key = "mc_connected"
-        self._attr_unique_id = f"{DOMAIN}_system_{self._sid}_mc_connected"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_system_{self._sid}_mc_connected")
 
     @property
     def is_on(self) -> bool | None:
@@ -183,7 +187,7 @@ class SystemMCConnectedBinary(CoordinatorEntity[AirzoneCoordinator], BinarySenso
     @property
     def device_info(self) -> DeviceInfo:
         return DeviceInfo(
-            identifiers={(DOMAIN, f"system-{self._sid}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"system-{self._sid}"))},
             name=f"Sistema {self._sid}",
             manufacturer="Airzone",
             model="HVAC System",
@@ -203,7 +207,7 @@ class IAQVentilationNeededBinary(CoordinatorEntity[AirzoneCoordinator], BinarySe
         self._iid = int(iaq_id)
         self._attr_name = None
         self._attr_translation_key = "needs_ventilation"
-        self._attr_unique_id = f"{DOMAIN}_iaq_{self._sid}_{self._iid}_vent_needed"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_iaq_{self._sid}_{self._iid}_vent_needed")
 
     def _iaq(self) -> dict:
         return self.coordinator.get_iaq(self._sid, self._iid) or {}
@@ -215,20 +219,30 @@ class IAQVentilationNeededBinary(CoordinatorEntity[AirzoneCoordinator], BinarySe
     @property
     def device_info(self) -> DeviceInfo:
         iaq = self._iaq()
+        model = iaq.get("cloud_device_type") or ("Cloud IAQ sensor" if iaq.get("cloud_device_id") else "IAQ sensor")
         return DeviceInfo(
-            identifiers={(DOMAIN, f"iaq-{self._sid}-{self._iid}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"iaq-{self._sid}-{self._iid}"))},
             name=iaq.get("name") or f"IAQ {self._sid}/{self._iid}",
             manufacturer="Airzone",
-            model="IAQ sensor",
+            model=model,
         )
 
     @property
     def is_on(self) -> bool | None:
         d = self._iaq()
+        explicit = d.get("needs_ventilation")
+        if explicit is None:
+            explicit = d.get("need_ventilation")
+        parsed = _as_bool(explicit)
+        if parsed is not None:
+            return parsed
         co2 = d.get("co2_value") if d.get("co2_value") is not None else d.get("co2")
         if co2 is None:
             return None
-        return bool(co2 >= 1200)
+        try:
+            return bool(float(co2) >= 1200)
+        except Exception:
+            return None
 
 
 class CondensationRiskBinary(CoordinatorEntity[AirzoneCoordinator], BinarySensorEntity):
@@ -242,7 +256,7 @@ class CondensationRiskBinary(CoordinatorEntity[AirzoneCoordinator], BinarySensor
         self._sid = int(system_id)
         self._attr_name = None
         self._attr_translation_key = "cond_risk_master"
-        self._attr_unique_id = f"{DOMAIN}_system_{self._sid}_condensation_risk"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_system_{self._sid}_condensation_risk")
 
     def _z(self) -> dict:
         mzid = self.coordinator.master_zone_id(self._sid)
@@ -256,7 +270,7 @@ class CondensationRiskBinary(CoordinatorEntity[AirzoneCoordinator], BinarySensor
     @property
     def device_info(self) -> DeviceInfo:
         return DeviceInfo(
-            identifiers={(DOMAIN, f"system-{self._sid}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"system-{self._sid}"))},
             name=f"Sistema {self._sid}",
             manufacturer="Airzone",
             model="HVAC System",

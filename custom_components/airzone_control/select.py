@@ -34,6 +34,9 @@ async def async_setup_entry(
         _LOGGER.warning("AirzoneCoordinator not found; aborting select setup.")
         return
 
+    if getattr(coord, "read_only", False):
+        return
+
     entities: List[SelectEntity] = []
 
     # MODO GLOBAL por SISTEMA
@@ -87,7 +90,7 @@ class ZoneModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
         super().__init__(coordinator)
         self._sid = int(system_id)
         self._zid = int(zone_id)
-        self._attr_unique_id = f"{DOMAIN}_zone_{self._sid}_{self._zid}_mode"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_zone_{self._sid}_{self._zid}_mode")
         z = coordinator.get_zone(system_id, zone_id) or {}
         self._device_name = z.get("name") or f"Zona {self._sid}/{self._zid}"
 
@@ -125,7 +128,7 @@ class ZoneModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
         z = self._zone()
         name = z.get("name") or f"Zona {self._sid}/{self._zid}"
         return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._sid}-{self._zid}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"{self._sid}-{self._zid}"))},
             name=name,
             manufacturer="Airzone",
             model="Local API zone",
@@ -196,7 +199,7 @@ class GlobalModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
         super().__init__(coordinator)
         self._sid = int(system_id)
-        self._attr_unique_id = f"{DOMAIN}_system_{self._sid}_mode_global"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_system_{self._sid}_mode_global")
 
     # --- helpers ---
     def _zones(self) -> List[dict]:
@@ -284,7 +287,7 @@ class GlobalModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
     @property
     def device_info(self) -> DeviceInfo:
         return DeviceInfo(
-            identifiers={(DOMAIN, f"system-{self._sid}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"system-{self._sid}"))},
             name=f"System {self._sid}",
         )
 
@@ -371,7 +374,7 @@ class ZoneFanSpeedSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
         super().__init__(coordinator)
         self._sid = int(system_id)
         self._zid = int(zone_id)
-        self._attr_unique_id = f"{DOMAIN}_zone_{self._sid}_{self._zid}_speed"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_zone_{self._sid}_{self._zid}_speed")
         z = coordinator.get_zone(system_id, zone_id) or {}
         self._device_name = z.get("name") or f"Zona {self._sid}/{self._zid}"
 
@@ -434,7 +437,7 @@ class ZoneFanSpeedSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
         z = self._zone()
         name = z.get("name") or f"Zona {self._sid}/{self._zid}"
         return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._sid}-{self._zid}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"{self._sid}-{self._zid}"))},
             name=name,
             manufacturer="Airzone",
             model="Local API zone",
@@ -484,7 +487,7 @@ class IAQVentModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
         super().__init__(coordinator)
         self._sid = int(system_id)
         self._iid = int(iaq_id)
-        self._attr_unique_id = f"{DOMAIN}_iaq_{self._sid}_{self._iid}_ventilation"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_iaq_{self._sid}_{self._iid}_ventilation")
         iaq = coordinator.get_iaq(system_id, iaq_id) or {}
         self._device_name = iaq.get("name") or f"IAQ {self._sid}/{self._iid}"
 
@@ -502,7 +505,7 @@ class IAQVentModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
     def device_info(self) -> DeviceInfo:
         iaq = self._iaq()
         return DeviceInfo(
-            identifiers={(DOMAIN, f"iaq-{self._sid}-{self._iid}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"iaq-{self._sid}-{self._iid}"))},
             name=iaq.get("name") or f"IAQ {self._sid}/{self._iid}",
             manufacturer="Airzone",
             model="IAQ Sensor",
@@ -565,7 +568,7 @@ class ZoneFieldSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
         self._attr_translation_key = unique_suffix
         self._attr_name = None
         self._fallback_name = name
-        self._attr_unique_id = f"{DOMAIN}_zone_{self._sid}_{self._zid}_{unique_suffix}"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_zone_{self._sid}_{self._zid}_{unique_suffix}")
 
     def _zone(self) -> dict:
         return self.coordinator.get_zone(self._sid, self._zid) or {}
@@ -616,7 +619,7 @@ class ZoneFieldSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
         z = self._zone()
         name = z.get("name") or f"Zona {self._sid}/{self._zid}"
         return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._sid}-{self._zid}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"{self._sid}-{self._zid}"))},
             name=name,
             manufacturer="Airzone",
             model="Local API zone",

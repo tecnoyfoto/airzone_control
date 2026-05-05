@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.event import async_track_state_change_event
@@ -53,12 +54,19 @@ async def async_setup_entry(
         entities.extend(_build_zone_sensors(coord, sid, zid))
 
     # ---- Sensores del Webserver ----
-    entities.extend(_build_webserver_sensors(coord))
+    if getattr(coord, "expose_webserver_entities", True):
+        entities.extend(_build_webserver_sensors(coord))
 
     # ---- Sensores IAQ ----
     if isinstance(getattr(coord, "iaqs", None), dict):
         for (sid, iid), _ in coord.iaqs.items():
             entities.extend(_build_iaq_sensors(coord, sid, iid))
+
+    # ---- Medidores cloud ----
+    cloud_energy_meters = getattr(coord, "cloud_energy_meters", None)
+    if isinstance(cloud_energy_meters, dict):
+        for meter_id, _ in cloud_energy_meters.items():
+            entities.extend(_build_cloud_energy_meter_sensors(coord, str(meter_id)))
 
     async_add_entities(entities)
 
@@ -75,7 +83,7 @@ class _BaseSystemSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
         super().__init__(coordinator)
         self._sid = int(system_id)
         self._attr_translation_key = tkey
-        self._attr_unique_id = f"{DOMAIN}_system_{self._sid}_{uid_suffix}"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_system_{self._sid}_{uid_suffix}")
 
     @property
     def available(self) -> bool:
@@ -83,11 +91,13 @@ class _BaseSystemSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
+        system = _system_dict(self.coordinator, self._sid)
+        model = system.get("cloud_device_type") or ("Cloud system" if getattr(self.coordinator, "connection_type", "local") == "cloud" else "HVAC System")
         return DeviceInfo(
-            identifiers={(DOMAIN, f"system-{self._sid}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"system-{self._sid}"))},
             name=f"Sistema {self._sid}",
             manufacturer="Airzone",
-            model="HVAC System",
+            model=model,
         )
 
 
@@ -100,7 +110,7 @@ class _BaseZoneSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
         self._sid = int(system_id)
         self._zid = int(zone_id)
         self._attr_translation_key = tkey
-        self._attr_unique_id = f"{DOMAIN}_zone_{self._sid}_{self._zid}_{uid_suffix}"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_zone_{self._sid}_{self._zid}_{uid_suffix}")
 
     def _zone(self) -> dict:
         return self.coordinator.get_zone(self._sid, self._zid) or {}
@@ -113,11 +123,12 @@ class _BaseZoneSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
     def device_info(self) -> DeviceInfo:
         z = self._zone()
         name = z.get("name") or f"Zona {self._sid}/{self._zid}"
+        model = z.get("cloud_device_type") or ("Cloud zone" if z.get("cloud_device_id") else "Local API zone")
         return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._sid}-{self._zid}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"{self._sid}-{self._zid}"))},
             name=name,
             manufacturer="Airzone",
-            model="Local API zone",
+            model=model,
         )
 
     @property
@@ -146,7 +157,7 @@ class _BaseIAQSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
         self._sid = int(system_id)
         self._iid = int(iaq_id)
         self._attr_translation_key = tkey
-        self._attr_unique_id = f"{DOMAIN}_iaq_{self._sid}_{self._iid}_{uid_suffix}"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_iaq_{self._sid}_{self._iid}_{uid_suffix}")
 
     def _iaq(self) -> dict:
         return self.coordinator.get_iaq(self._sid, self._iid) or {}
@@ -158,12 +169,90 @@ class _BaseIAQSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         iaq = self._iaq()
+        model = iaq.get("cloud_device_type") or ("Cloud IAQ sensor" if iaq.get("cloud_device_id") else "IAQ Sensor")
         return DeviceInfo(
-            identifiers={(DOMAIN, f"iaq-{self._sid}-{self._iid}")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"iaq-{self._sid}-{self._iid}"))},
             name=iaq.get("name") or f"IAQ {self._sid}/{self._iid}",
             manufacturer="Airzone",
-            model="IAQ Sensor",
+            model=model,
         )
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        iaq = self._iaq()
+        attrs: dict[str, Any] = {}
+        for key in ("cloud_device_type", "system_number", "zone_number"):
+            if key in iaq:
+                attrs[key] = iaq.get(key)
+        return attrs or None
+
+
+class _BaseCloudEnergyMeterSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: AirzoneCoordinator,
+        meter_id: str,
+        key: str,
+        name: str,
+        *,
+        unit: str | None = None,
+        device_class: str | None = None,
+        state_class: SensorStateClass | None = None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._meter_id = str(meter_id)
+        self._key = key
+        self._attr_name = name
+        uid_meter = "".join(ch if ch.isalnum() else "_" for ch in self._meter_id).strip("_") or "meter"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_cloud_energy_{uid_meter}_{key}")
+        if unit is not None:
+            self._attr_native_unit_of_measurement = unit
+        if device_class is not None:
+            self._attr_device_class = device_class
+        if state_class is not None:
+            self._attr_state_class = state_class
+
+    def _meter(self) -> dict:
+        meters = getattr(self.coordinator, "cloud_energy_meters", None)
+        if not isinstance(meters, dict):
+            return {}
+        return meters.get(self._meter_id) or {}
+
+    @property
+    def available(self) -> bool:
+        return self._key in self._meter()
+
+    @property
+    def native_value(self) -> Optional[float]:
+        value = self._meter().get(self._key)
+        try:
+            return float(value)
+        except Exception:
+            return None
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        meter = self._meter()
+        name = meter.get("name") or "Airzone energy meter"
+        device_id = meter.get("cloud_device_id") or self._meter_id
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"cloud-energy-{device_id}"))},
+            name=name,
+            manufacturer="Airzone",
+            model=meter.get("cloud_device_type") or "Cloud energy meter",
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        meter = self._meter()
+        attrs: dict[str, Any] = {}
+        for key in ("cloud_device_type", "system_number"):
+            if key in meter:
+                attrs[key] = meter.get(key)
+        return attrs or None
 
 
 # ===================================================================
@@ -338,7 +427,7 @@ class SystemNumIAQSensor(_BaseSystemSensor):
 class SystemOutdoorTempSensor(_BaseSystemSensor):
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
         super().__init__(coordinator, system_id, "outdoor_temp", "outdoor_temp")
-        self._attr_native_unit_of_measurement = "°C"
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_device_class = "temperature"
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._ha_entity_listener_remove = None
@@ -355,7 +444,7 @@ class SystemOutdoorTempSensor(_BaseSystemSensor):
         return ext_map.get(str(self._sid)) or ext_map.get(self._sid)
 
     def _ha_temperature_c(self) -> float | None:
-        """Lee el estado del sensor de HA elegido y lo devuelve en °C."""
+        """Lee el estado del sensor de HA elegido y lo devuelve en grados C."""
         entity_id = self._override_entity_id()
         if not entity_id:
             return None
@@ -370,14 +459,15 @@ class SystemOutdoorTempSensor(_BaseSystemSensor):
         except Exception:
             return None
 
-        # Unidad (si viene en ºF/K convertimos)
+        # Unidad (si viene en Fahrenheit/Kelvin convertimos)
         unit = (st.attributes.get("unit_of_measurement") or "").strip()
-        if unit in ("°F", "F", "ºF"):
+        unit = unit.replace("Â", "")
+        if unit in (UnitOfTemperature.FAHRENHEIT, "F", "ºF"):
             return (value - 32.0) * 5.0 / 9.0
         if unit == "K":
             return value - 273.15
 
-        # Asumimos °C u otra unidad métrica equivalente
+        # Asumimos Celsius u otra unidad metrica equivalente
         return value
 
     def _airzone_temperature_c(self) -> float | None:
@@ -439,7 +529,7 @@ class SystemOutdoorTempSensor(_BaseSystemSensor):
 class SystemReturnTempSensor(_BaseSystemSensor):
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
         super().__init__(coordinator, system_id, "return_temp", "return_temp")
-        self._attr_native_unit_of_measurement = "°C"
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_device_class = "temperature"
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -458,7 +548,7 @@ class SystemReturnTempSensor(_BaseSystemSensor):
 class SystemWorkTempSensor(_BaseSystemSensor):
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
         super().__init__(coordinator, system_id, "work_temp", "work_temp")
-        self._attr_native_unit_of_measurement = "°C"
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_device_class = "temperature"
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -541,11 +631,11 @@ def _build_zone_sensors(coord: AirzoneCoordinator, sid: int, zid: int) -> List[S
     if has("aq_quality"):
         entities.append(GenericZoneValueSensor(coord, sid, zid, "Air quality", "aq_quality", ("aq_quality",), cast=int))
     if has("acs_temp", "tankTemp", "tank_temp"):
-        entities.append(GenericZoneValueSensor(coord, sid, zid, "DHW temperature", "acs_temp", ("acs_temp", "tankTemp", "tank_temp"), unit="°C", cast=float, device_class="temperature", state_class=SensorStateClass.MEASUREMENT))
+        entities.append(GenericZoneValueSensor(coord, sid, zid, "DHW temperature", "acs_temp", ("acs_temp", "tankTemp", "tank_temp"), unit=UnitOfTemperature.CELSIUS, cast=float, device_class="temperature", state_class=SensorStateClass.MEASUREMENT))
     if has("acs_setpoint", "tank_setpoint", "tankSetpoint"):
-        entities.append(GenericZoneValueSensor(coord, sid, zid, "DHW setpoint", "acs_setpoint", ("acs_setpoint", "tank_setpoint", "tankSetpoint"), unit="°C", cast=float, device_class="temperature", state_class=SensorStateClass.MEASUREMENT))
+        entities.append(GenericZoneValueSensor(coord, sid, zid, "DHW setpoint", "acs_setpoint", ("acs_setpoint", "tank_setpoint", "tankSetpoint"), unit=UnitOfTemperature.CELSIUS, cast=float, device_class="temperature", state_class=SensorStateClass.MEASUREMENT))
 
-    # Unidades (0=°C, 1=°F)
+    # Unidades (0=Celsius, 1=Fahrenheit)
     if has("units"):
         entities.append(ZoneUnitsSensor(coord, sid, zid))
 
@@ -703,7 +793,7 @@ class ZoneHumiditySensor(_BaseZoneSensor):
 class ZoneTemperatureSensor(_BaseZoneSensor):
     def __init__(self, coordinator, sid, zid) -> None:
         super().__init__(coordinator, sid, zid, "temperature", "temperature")
-        self._attr_native_unit_of_measurement = "°C"
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_device_class = "temperature"
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -752,7 +842,7 @@ class ZoneUnitsSensor(_BaseZoneSensor):
             return None
         try:
             u = int(v)
-            return "°C" if u == 0 else "°F"
+            return UnitOfTemperature.CELSIUS if u == 0 else UnitOfTemperature.FAHRENHEIT
         except Exception:
             return None
 
@@ -820,7 +910,7 @@ class _BaseWSSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
     def __init__(self, coordinator: AirzoneCoordinator, tkey: str, uid_suffix: str) -> None:
         super().__init__(coordinator)
         self._attr_translation_key = tkey
-        self._attr_unique_id = f"{DOMAIN}_ws_{uid_suffix}"
+        self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_ws_{uid_suffix}")
 
     def _ws(self) -> dict:
         return getattr(self.coordinator, "webserver", {}) or {}
@@ -833,7 +923,7 @@ class _BaseWSSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
     def device_info(self) -> DeviceInfo:
         ws = self._ws()
         return DeviceInfo(
-            identifiers={(DOMAIN, "webserver")},
+            identifiers={(DOMAIN, self.coordinator.scoped_device_identifier("webserver"))},
             name="Webserver",
             manufacturer="Airzone",
             model=ws.get("ws_type") or "ws_az",
@@ -1037,6 +1127,78 @@ def _build_iaq_sensors(coord: AirzoneCoordinator, sid: int, iid: int) -> List[Se
     return entities
 
 
+def _build_cloud_energy_meter_sensors(coord: AirzoneCoordinator, meter_id: str) -> List[SensorEntity]:
+    meters = getattr(coord, "cloud_energy_meters", None)
+    if not isinstance(meters, dict):
+        return []
+    meter = meters.get(str(meter_id)) or {}
+    entities: List[SensorEntity] = []
+
+    def has(key: str) -> bool:
+        value = meter.get(key)
+        if value is None:
+            return False
+        if isinstance(value, str) and value.strip().lower() in ("", "nan", "none"):
+            return False
+        return True
+
+    specs = (
+        ("energy_hour_latest", "Last hour energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy_day_latest", "Latest daily energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy_day_current", "Today energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy_month_latest", "Latest monthly energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy_month_current", "Current month energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy_year_latest", "Latest yearly energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy_year_current", "Current year energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy_total", "Total energy", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
+        ("total_energy", "Total energy", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
+        ("energy_accumulated", "Accumulated energy", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
+        ("energy_consumed", "Consumed energy", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
+        ("consumption", "Consumption", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy_acc", "Imported energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy_ret", "Returned energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy1_acc", "Imported energy P1", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy1_ret", "Returned energy P1", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy2_acc", "Imported energy P2", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy2_ret", "Returned energy P2", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy3_acc", "Imported energy P3", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy3_ret", "Returned energy P3", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("power", "Power", "W", "power", SensorStateClass.MEASUREMENT),
+        ("active_power", "Active power", "W", "power", SensorStateClass.MEASUREMENT),
+        ("power_latest", "Latest power", "W", "power", SensorStateClass.MEASUREMENT),
+        ("power_total", "Power", "kW", "power", SensorStateClass.MEASUREMENT),
+        ("power_p1", "Power P1", "kW", "power", SensorStateClass.MEASUREMENT),
+        ("power_p2", "Power P2", "kW", "power", SensorStateClass.MEASUREMENT),
+        ("power_p3", "Power P3", "kW", "power", SensorStateClass.MEASUREMENT),
+        ("current", "Current", "A", "current", SensorStateClass.MEASUREMENT),
+        ("current_total", "Current", "A", "current", SensorStateClass.MEASUREMENT),
+        ("current_p1", "Current P1", "A", "current", SensorStateClass.MEASUREMENT),
+        ("current_p2", "Current P2", "A", "current", SensorStateClass.MEASUREMENT),
+        ("current_p3", "Current P3", "A", "current", SensorStateClass.MEASUREMENT),
+        ("voltage", "Voltage", "V", "voltage", SensorStateClass.MEASUREMENT),
+        ("voltage_total", "Voltage", "V", "voltage", SensorStateClass.MEASUREMENT),
+        ("voltage_p1", "Voltage P1", "V", "voltage", SensorStateClass.MEASUREMENT),
+        ("voltage_p2", "Voltage P2", "V", "voltage", SensorStateClass.MEASUREMENT),
+        ("voltage_p3", "Voltage P3", "V", "voltage", SensorStateClass.MEASUREMENT),
+    )
+
+    for key, name, unit, device_class, state_class in specs:
+        if has(key):
+            entities.append(
+                _BaseCloudEnergyMeterSensor(
+                    coord,
+                    str(meter_id),
+                    key,
+                    name,
+                    unit=unit,
+                    device_class=device_class,
+                    state_class=state_class,
+                )
+            )
+
+    return entities
+
+
 class IAQIndexSensor(_BaseIAQSensor):
     def __init__(self, coordinator, sid, iid) -> None:
         super().__init__(coordinator, sid, iid, "iaq_index", "iaq_index")
@@ -1138,7 +1300,7 @@ class IAQTVOCSensor(_BaseIAQSensor):
 class IAQPM25Sensor(_BaseIAQSensor):
     def __init__(self, coordinator, sid, iid) -> None:
         super().__init__(coordinator, sid, iid, "pm25", "pm25")
-        self._attr_native_unit_of_measurement = "µg/m³"
+        self._attr_native_unit_of_measurement = "\u03bcg/m\u00b3"
         # Mantener estadísticas a largo plazo (y evitar reparaciones) si ya existían
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -1154,7 +1316,7 @@ class IAQPM25Sensor(_BaseIAQSensor):
 class IAQPM10Sensor(_BaseIAQSensor):
     def __init__(self, coordinator, sid, iid) -> None:
         super().__init__(coordinator, sid, iid, "pm10", "pm10")
-        self._attr_native_unit_of_measurement = "µg/m³"
+        self._attr_native_unit_of_measurement = "\u03bcg/m\u00b3"
         # Mantener estadísticas a largo plazo (y evitar reparaciones) si ya existían
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -1186,7 +1348,7 @@ class IAQPressureSensor(_BaseIAQSensor):
 class IAQAbsHumiditySensor(_BaseIAQSensor):
     def __init__(self, coordinator, sid, iid) -> None:
         super().__init__(coordinator, sid, iid, "abs_humidity_gm3", "abs_humidity_gm3")
-        self._attr_native_unit_of_measurement = "g/m³"
+        self._attr_native_unit_of_measurement = "g/m\u00b3"
 
     @property
     def native_value(self) -> Optional[float]:

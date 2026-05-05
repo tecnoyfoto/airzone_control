@@ -247,7 +247,7 @@
     "sensor.airzone_iaq_ventmode": "Modo de ventilación IAQ",
     "binary_sensor": {
       "battery_low": {
-        "name": "Bater?a baja"
+        "name": "Batería baja"
       },
       "open_window": {
         "name": "Ventana abierta"
@@ -262,10 +262,10 @@
         "name": "MC conectado"
       },
       "needs_ventilation": {
-        "name": "Necesita ventilaci?n"
+        "name": "Necesita ventilación"
       },
       "cond_risk_master": {
-        "name": "Riesgo de condensaci?n (m?ster)"
+        "name": "Riesgo de condensación (máster)"
       }
     },
     "switch": {
@@ -281,10 +281,37 @@
     "step": {
       "user": {
         "title": "Airzone Control",
+        "description": "Elige cómo quieres conectarte a Airzone.",
+        "data": {
+          "connection_type": "Tipo de conexión"
+        }
+      },
+      "local": {
+        "title": "Airzone Control - Local API",
         "description": "Conecta con tu Airzone Local API (webserver).",
         "data": {
           "host": "Host",
           "port": "Puerto"
+        }
+      },
+      "cloud": {
+        "title": "Airzone Control - Cloud API",
+        "description": "Inicia sesión con tu cuenta de Airzone Cloud.",
+        "data": {
+          "email": "Email",
+          "password": "Contraseña",
+          "cloud_profile": "Perfil cloud",
+          "cloud_include_categories": "Categorías cloud a incluir",
+          "cloud_include_device_ids": "Dispositivos cloud a incluir",
+          "cloud_include_bound_iaqs": "Incluir sondas IAQ vinculadas a sistemas o zonas",
+          "cloud_exclude_iaq_names": "Nombres de sondas IAQ a excluir"
+        }
+      },
+      "cloud_devices": {
+        "title": "Airzone Control - Dispositivos cloud",
+        "description": "Selecciona los dispositivos Cloud que debe publicar esta entrada.",
+        "data": {
+          "cloud_include_device_ids": "Dispositivos cloud a incluir"
         }
       },
       "prefix": {
@@ -296,11 +323,15 @@
       }
     },
     "error": {
-      "cannot_connect": "No se puede conectar. Revisa host/puerto y que el webserver de Airzone esté accesible.",
-      "no_host": "Introduce un host."
+      "cannot_connect": "No se puede conectar. Revisa los datos introducidos y que Airzone esté accesible.",
+      "no_host": "Introduce un host.",
+      "no_email": "Introduce un email.",
+      "no_password": "Introduce una contraseña.",
+      "invalid_auth": "Credenciales de Airzone Cloud no válidas.",
+      "user_not_confirmed": "Tu cuenta de Airzone Cloud todavía no está confirmada."
     },
     "abort": {
-      "already_configured": "Este host ya está configurado."
+      "already_configured": "Esta fuente de Airzone ya está configurada."
     }
   },
   "options": {
@@ -325,7 +356,12 @@
           "group_7_zones": "Grupo 7 - Zonas",
           "group_8_name": "Grupo 8 - Nombre",
           "group_8_zones": "Grupo 8 - Zonas",
-          "groups_json": "Grupos (JSON avanzado)"
+          "groups_json": "Grupos (JSON avanzado)",
+          "cloud_profile": "Perfil cloud",
+          "cloud_include_categories": "Categorías cloud a incluir",
+          "cloud_include_device_ids": "Dispositivos cloud a incluir",
+          "cloud_include_bound_iaqs": "Incluir sondas IAQ vinculadas a sistemas o zonas",
+          "cloud_exclude_iaq_names": "Nombres de sondas IAQ a excluir"
         },
         "description": "Crea hasta 8 grupos lógicos con un nombre y seleccionando sus zonas. Para instalaciones grandes, usa el campo JSON avanzado (tiene prioridad sobre los grupos de la UI)."
       }

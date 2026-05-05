@@ -1,156 +1,166 @@
-[🇪🇸 Leer en español](README.es.md)
+[Leer en español](README.es.md)
 
-# Airzone Control Integration (Local API) – Home Assistant
+# Airzone Control for Home Assistant
 
-**Unofficial** integration to control and monitor Airzone systems using the **Local API** (port 3000). Works **without cloud** and is designed for multi‑zone installations and/or multiple Airzone devices on the same network.
+Airzone Control is an **unofficial** Home Assistant custom integration for Airzone installations.
 
-Compared to the official integration, **Airzone Control**:
-- Supports **multiple devices** (Airzone Webserver / Aidoo Pro / Aidoo Pro Fancoil), each with its zones and sensors.
-- Exposes more entities: zone temperature, errors, webserver data (firmware, Wi‑Fi signal, channel), **IAQ** (CO₂, PM, TVOC, pressure, score), profiles/diagnostics, etc.
-- Groups entities by **device** and **zone**, making dashboards and automations easier.
-- Provides a **“Master mode”** selector (stop/heating) when the device supports it.
+It supports two connection modes:
 
-> **Important:** the Local API lives in the **Airzone Webserver** or **Aidoo Pro**. Controllers like **Flexa 3** alone **do not** expose the REST API. You need Webserver/Aidoo in the installation.
+- **Local API**: the recommended path for day-to-day HVAC control through an Airzone Webserver or Aidoo device on your LAN.
+- **Cloud API**: optional **read-only** support for devices that are only available through Airzone Cloud, such as cloud energy meters and Wi-Fi IAQ sensors.
 
----
+The integration is designed for installations with multiple zones, IAQ sensors, and, when needed, several Airzone devices in the same Home Assistant instance.
 
-## ? What?s new (v1.7.0)
+## Current Status
 
-### Local API update for newer Airzone schemas
-- Improved Local API prefix detection for more Airzone Webserver/Aidoo variants.
-- Version discovery now uses `POST /version` for more reliable schema detection.
-- The coordinator now populates `systems` properly and exposes `get_system()` consistently.
-- Conservative driver registration via `/integration` when supported by the device.
+Version `1.8.0` adds the first public Cloud API phase. Cloud support is intentionally conservative:
 
-### New dynamic entities for supported hardware
-The integration now creates new entities only when the connected device actually exposes those fields:
-- **System sensors**: energy consumption, energy produced, heat generation power, UE consumption.
-- **Zone sensors**: battery level, coverage, sleep timer, air quality, DHW temperature, DHW setpoint.
-- **Zone selects**: sleep, vertical/horizontal slats, vertical/horizontal swing, ERV mode.
-- **Binary sensors**: low battery, antifreeze.
-- **ACS/DHW switches**: DHW power and DHW powerful mode.
+- Cloud entities are read-only.
+- Cloud write actions are disabled.
+- `select`, `switch`, and `button` platforms are not created for Cloud entries.
+- Cloud climate entities can be exposed, but they are read-only.
+- The default Cloud polling interval is `30` seconds.
 
-### Safe upgrade for existing installations
-- Existing climate/group/system logic is preserved.
-- Installations that do not expose ACS, slats, ERV or energy fields remain unchanged.
-- This release is still **Local API only**. Cloud API support is not included yet.
+Recommended mixed setup:
 
----
+- Use **Local API** for thermostats and locally attached IAQ sensors.
+- Add a **Cloud API** entry only for cloud-only devices.
+- Use the Cloud profile **Complement Local API** and select the exact Cloud devices to expose.
 
-## ✨ What’s new (v1.6.2)
+## Highlights
 
-### 🧩 Master thermostat & “Hotel” buttons (turn all on/off)
-- The **master thermostat** now reflects the system state correctly: it is **ON if at least 1 zone is ON**, and only turns OFF when **all** zones are OFF.
-- Changing the master **target temperature** applies the setpoint to **all zones (ON or OFF)** **without powering them on**.
-- **Hotel buttons** (Turn all ON / Turn all OFF) are more reliable: paced commands + verification/retries so zones reach the expected final state.
+- Local zone thermostats.
+- Master thermostat per system.
+- Optional group thermostats.
+- Dynamic sensors, selects, switches and buttons depending on what your hardware exposes.
+- IAQ sensors: CO2, TVOC, PM2.5, PM10, pressure, score/index and text quality where available.
+- Webserver diagnostics: firmware, Wi-Fi quality, RSSI, channel and connectivity where available.
+- Cloud energy meters.
+- Cloud Wi-Fi IAQ sensors.
+- Multiple config entries, so Local API and Cloud API can coexist without unique ID collisions.
+- Diagnostics download with sensitive fields redacted.
 
-### 🩺 Diagnostics download (now working)
-From the device page you can click **“Download diagnostics”** to generate a JSON snapshot of the integration (useful for debugging/reporting without digging through logs).
+## Requirements
 
-### 🧪 Debug attributes: `systemID`, `zoneID` (and `group_id` when applicable)
-Entities expose the real Airzone identifiers as attributes. Useful to:
-- quickly verify which zone is which,
-- debug automations,
-- cross-check data against the API.
+For Local API:
 
-### ℹ️ More information in the device page
-When returned by the API, the **Device information** card may show:
-- serial number,
-- firmware version.
+- Airzone Webserver, Airzone Hub, Aidoo Pro or Aidoo Pro Fancoil exposing Local API v1.
+- Home Assistant must be able to reach the device IP.
+- Default Local API port: `3000`.
 
-### 🛑 Errors: from “Error X” to human-readable text + translations
-- The error sensor now shows a readable description (e.g., “Low battery”, “Communication failure”, etc.).
-- Debug details remain available as attributes (codes/lists).
-- Special case: **Error 8 ⇒ “Low battery”**.
-- Error descriptions are translated across the integration languages.
+For Cloud API:
 
-### 📈 Long-term statistics restored (`state_class`)
-- “Regular” sensors (temperature, humidity, demand, etc.) correctly declare `state_class` and units/classes again.
-- Same for IAQ sensors (CO₂, TVOC, PM2.5, PM10, pressure), removing warnings and restoring statistics/history.
+- An Airzone Cloud account.
+- Cloud devices visible in that account.
+- Internet access from Home Assistant to Airzone Cloud.
 
-### 🛠️ Robustness: don’t crash on missing `zone_id`
-Fixed a case where an entity could end up with a missing `zone_id` (None) and trigger errors in the update loop. It’s now handled safely.
+Important: controllers such as Flexa 3 by themselves may not expose the Local REST API. You usually need a Webserver/Aidoo device for Local API access.
 
-> Note: **Global Mode** remains independent. Neither the master thermostat nor the Hotel buttons ever change the global mode.
+## Installation
 
+### HACS
 
-## ✨ What’s new (v1.6.1)
+1. Open **HACS -> Integrations**.
+2. Open the three-dot menu and choose **Custom repositories**.
+3. Add `https://github.com/tecnoyfoto/airzone_control` as an **Integration**.
+4. Install **Airzone Control**.
+5. Restart Home Assistant.
 
-### ✅ Global Mode: 1:1 behavior with the Airzone app
-From this version on, **Global Mode** matches the real Airzone app behavior:
+### Manual
 
-- Global Mode state is based on the `mode` field (global mode), **not** on whether zones are powered on/off (`on`).
-  - Example: if the system is in **Heat** but all zones are `on=0`, Global Mode must still show **Heat** (because heat is allowed).
+Copy the integration folder into your Home Assistant configuration:
 
-- When selecting **Off/Stop** (global):
-  - applies Stop `mode` globally **and**
-  - forces **all zones to `on=0`** (off).
-  - Result: zones cannot be turned on until the administrator removes the stop.
+```text
+config/
+  custom_components/
+    airzone_control/
+      __init__.py
+      manifest.json
+      config_flow.py
+      const.py
+      coordinator.py
+      coordinator_cloud.py
+      climate.py
+      sensor.py
+      binary_sensor.py
+      select.py
+      switch.py
+      button.py
+      translations/
+```
 
-- When selecting **Heat / Cool / Fan / Dry / Auto** (depending on what your API exposes):
-  - updates **only** the global `mode` (broadcast),
-  - **without powering zones on** (zones keep their current `on` state).
-  - Result: the mode is “allowed”, while each zone remains independent.
+Then restart Home Assistant.
 
-### 🧠 More consistent UI
-When Global Mode is **Stop/Off**, it is normal for individual thermostats/mode selects to show **only valid options** (for example, only “Off”). This prevents selecting modes the system won’t accept while global lock is active.
+## Configuration
 
----
+Add the integration from:
 
-## ✨ What’s new (v1.6.0)
+**Settings -> Devices & services -> Add integration -> Airzone Control**
 
-### Added
-- Zone thermostats (one `climate` per zone).
-- Master thermostat (per Airzone system).
-- **Group thermostats** (one `climate` per group):
-  - Change temperature, mode and **turn on/off**.
-  - Applies the action to all zones in the group.
-- Additional entities (sensors/selects/switches/buttons) depending on your installation.
+You will be asked to choose a connection type.
 
----
+### Local API
 
-## 📦 Installation (quick)
+Use this for the main HVAC installation.
 
-1. Copy this folder into:
-   `config/custom_components/airzone_control/`
-2. Restart Home Assistant.
-3. Add the integration from:
-   **Settings → Devices & Services → Add integration → Airzone Control**
+Fields:
 
----
+- **Host**: IP address of the Airzone Webserver/Aidoo device.
+- **Port**: usually `3000`.
 
-## ⚙️ Configuration
+The integration tries to detect the correct API prefix automatically. If detection fails, it lets you choose a prefix manually.
 
-### Basic setup
-- **Host**: Airzone webserver IP
-- **Port**: webserver port
-- The integration auto‑detects the API prefix (and allows selecting it manually if needed).
+Quick checks:
 
-### Options
+```text
+http://<IP>:3000/api/v1/webserver
+http://<IP>:3000/api/v1/version
+```
+
+### Cloud API
+
+Use this when you need devices that are not available through the Local API.
+
+Fields:
+
+- Airzone Cloud email.
+- Airzone Cloud password.
+- Cloud profile.
+- Categories/devices to expose.
+
+Cloud profiles:
+
+- **Use all Cloud API devices**: exposes all supported Cloud categories.
+- **Complement Local API**: intended for Local + Cloud mixed installations. It enables energy and IAQ categories and lets you choose exact Cloud devices.
+- **Custom**: lets you choose categories and devices manually.
+
+For a Local + Cloud installation, choose **Complement Local API** and select only the Cloud energy meter or Wi-Fi IAQ sensors you actually want. Leaving the device selection empty means no Cloud devices are published for that complementary entry.
+
+## Options
+
 Open:
-**Settings → Devices & Services → Airzone Control → (gear icon) Options**
 
-You can configure:
-- **Polling interval**
-- **Groups (easy UI)**
-- **Groups (advanced JSON)**
+**Settings -> Devices & services -> Airzone Control -> Configure**
 
----
+Common options:
 
-## 👥 Group thermostats
+- Polling interval.
+- Logical zone groups.
+- Cloud profile and Cloud category/device filters for Cloud entries.
 
-### Easy UI (recommended)
-In **Options**, you will find several group “slots” (default: 8):
-- **Group X – Name**
-- **Group X – Zones** (checkbox list)
+Saving options reloads the integration automatically.
 
-Leave `Groups (advanced JSON)` empty, save, and the new `climate.*` entities for groups will appear.
+## Group Thermostats
 
-> Note: saving options reloads the integration automatically and groups appear without restarting Home Assistant.
+Groups let you create one thermostat entity that controls several Local API zones.
 
-### Advanced JSON (no practical limit)
-If you fill `Groups (advanced JSON)`, it has priority and UI groups are ignored.
-Format:
+Easy UI:
+
+- Set a group name.
+- Select the zones.
+- Save options.
+
+Advanced JSON example:
 
 ```json
 [
@@ -167,147 +177,91 @@ Format:
 ]
 ```
 
----
+## Entities
 
-## ✅ Requirements
+Local API can expose:
 
-- **Airzone Webserver** or **Aidoo Pro/Fancoil** with **Local API v1** (port **3000**).
-- Home Assistant must reach the device IP (same LAN or proper routing/firewall rules).
+- Zone climate entities.
+- Master system climate entities.
+- Group climate entities.
+- Zone temperature, setpoint, mode, fan speed, sleep and slat controls where available.
+- System sensors and switches.
+- Webserver sensors.
+- IAQ sensors and ventilation entities.
+- Hotel-style buttons to turn all zones on/off where supported.
 
-**Quick API check:**
-- In a browser:
-  - `http://<IP>:3000/api/v1/webserver` → device JSON
-  - `http://<IP>:3000/api/v1/version` → `{"schema":"1.xx"}`
+Cloud API can expose:
 
----
+- Read-only climate zones when enabled.
+- Cloud IAQ sensors.
+- Cloud energy meter sensors.
+- Cloud ACS/auxiliary data where supported by the integration.
 
-## 📦 Installation (detailed)
+## Privacy and Diagnostics
 
-### HACS (recommended)
-1. **HACS → Integrations →** ⋮ **Custom repositories**
-2. Add `https://github.com/tecnoyfoto/airzone_control` (*Integration*)
-3. Install **Airzone Control** and **restart** Home Assistant
+Diagnostics redact sensitive data, including:
 
-### Manual
-1. Copy `custom_components/airzone_control` into your HA configuration folder:
+- Passwords and tokens.
+- Email.
+- Host/IP related fields.
+- Cloud user, installation, webserver and device identifiers.
+- MAC/serial/unique IDs.
 
-```
-custom_components/
-  └── airzone_control/
-      ├── __init__.py
-      ├── manifest.json
-      ├── config_flow.py
-      ├── const.py
-      ├── coordinator.py
-      ├── api_modes.py
-      ├── climate.py
-      ├── i18n.py
-      ├── sensor.py
-      ├── binary_sensor.py
-      ├── select.py
-      ├── switch.py
-      ├── button.py
-      └── translations/
-          ├── en.json
-          ├── es.json
-          ├── ca.json
-          ├── fr.json
-          ├── it.json
-          ├── pt.json
-          ├── de.json
-          ├── gl.json
-          ├── nl.json
-          └── eu.json
-```
+Cloud device IDs may still be used internally for stable filtering, but diagnostics are redacted before export.
 
-2. **Restart** Home Assistant.
+## Known Limitations
 
----
+- Cloud API support is read-only in this release.
+- Cloud write support is intentionally disabled until it is validated safely.
+- Cloud polling should stay conservative. The public default is `30` seconds.
+- Energy Dashboard classification for some Cloud meter fields may need confirmation because some Airzone counters appear to reset by period.
+- Not every Airzone device exposes the same Local API fields; entities are created dynamically when fields exist.
 
-## ⚙️ Configuration (detailed)
+## Troubleshooting
 
-### mDNS discovery
-- Go to **Settings → Devices & Services → Discovered** and click **Configure** on each Airzone device.
-- If your network blocks mDNS (VLAN, Wi‑Fi isolation, etc.), use manual setup.
+- **Local API does not connect**: use the Webserver/Aidoo IP, not the controller IP. Check port `3000`, firewall/VLAN rules and the `/webserver` endpoint.
+- **Device is not discovered**: add it manually by IP. mDNS discovery may be blocked by the network.
+- **Missing entities**: the connected device may not expose those fields.
+- **Duplicate thermostats after adding Cloud**: use the Cloud profile **Complement Local API** and disable/select Cloud devices carefully.
+- **Cloud IAQ or energy becomes unavailable**: increase the Cloud polling interval and check Airzone Cloud availability.
 
-### Manual setup (IP)
-1. **Settings → Devices & Services → + Add Integration → Airzone Control**
-2. Host = **Webserver/Aidoo IP**, Port = **3000**
+## Compatibility
 
-### Multiple installations
-- Add one entry per Airzone device.
-- The integration creates entities for zones and sensors per device.
+Known useful Local API targets:
 
----
+- Airzone Webserver / Hub / 5G / Wi-Fi webserver.
+- Aidoo Pro.
+- Aidoo Pro Fancoil.
 
-## 🗂️ Entities
+Known Cloud device families currently handled:
 
-### Climate (per zone)
-- On/off, setpoint, available modes depending on API (Heat/Cool/Dry/Fan/Auto/Stop).
-- Next: fully dynamic fan speed mapping (`speed/speeds/speed_values/speed_type`).
+- `az_zone`, `aidoo`, `aidoo_it`
+- `az_airqsensor`
+- `az_energy_clamp`
+- `az_acs`, `aidoo_acs`
+- `az_vmc`, `az_relay`, `az_dehumidifier`
 
-### Sensors
-- **Zone:** temperature, errors, (others if exposed)
-- **System:** errors, profile/diagnostics, zone count, etc.
-- **Webserver:** firmware, Wi‑Fi quality, RSSI, channel, interface, MAC, type
-- **IAQ:** CO₂, PM2.5, PM10, TVOC, pressure, score/index (if Airzone IAQ sensors exist)
+## Translations
 
----
+Included languages:
 
-## 🔁 Migration (Breaking change)
+- English
+- Spanish
+- Catalan
+- French
+- German
+- Italian
+- Portuguese
+- Basque
+- Galician
+- Dutch
 
-To support multiple devices without collisions, some `unique_id` values became unique per system/zone. Home Assistant binds `entity_id` to `unique_id`, so some `entity_id` may change after updating.
+Some new Cloud strings may fall back to English in secondary languages until native translations are reviewed.
 
-If you see “Entity not found”:
-1. **Settings → Entities**, filter by **Integration: Airzone Control**, find the new entity.
-2. If needed, edit the entity and set your preferred **Entity ID**.
-3. Update automations/dashboards accordingly.
+## Changelog
 
-> Tip: make a **backup** before updating.
+See [CHANGELOG.md](CHANGELOG.md).
 
----
+## License
 
-## 🛠️ Troubleshooting
-
-- **No connection:** use Webserver/Aidoo IP (not the controller IP), check `/webserver` and `/version`, review firewall/VLAN.
-- **Missing modes:** depends on what the API exposes. Check the Airzone app profile or share `/hvac` JSON.
-- **Not discovered:** add by IP (mDNS may be blocked).
-
----
-
-## 🧭 Quick compatibility
-
-- **Yes:** Airzone **Webserver** (Hub/5G/Wi‑Fi), **Aidoo Pro**, **Aidoo Pro Fancoil** with Local API v1.
-- **No:** **Flexa 3** alone (without Webserver/Aidoo).
-- **Port:** 3000. Main endpoints: `/api/v1/webserver`, `/api/v1/version`, `/api/v1/hvac`, `/api/v1/iaq`.
-
----
-
-## 🌐 Available translations
-
-- Spanish 🇪🇸
-- English 🇬🇧
-- Catalan 🇨🇦
-- French 🇫🇷
-- Italian 🇮🇹
-- Portuguese 🇵🇹
-- German 🇩🇪
-- Galician 🇬🇷
-- Dutch 🇳🇱
-- Basque 🇪🇺
-
----
-
-## 🤝 Contributing
-
-Suggestions, issues and PRs:
-**Repo:** https://github.com/tecnoyfoto/airzone_control
-
----
-
-### 📄 Changelog
-
-See full version history in [`CHANGELOG.md`](./CHANGELOG.md)
-
-## 📜 License
 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)

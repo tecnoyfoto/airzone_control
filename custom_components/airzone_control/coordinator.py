@@ -68,6 +68,11 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
         self._hvac_empty_reads = 0
         self._iaq_empty_reads = 0
 
+        # Compatibilidad entre varias entradas (p. ej. Local + Cloud simultáneas)
+        self.connection_type = "local"
+        self.uid_scope = "local"
+        self.read_only = False
+
     # ---------------- bases URL / sesión ----------------
     def _http_base(self) -> str:
         return f"http://{self._host}:{self._port}{(self._prefix or '')}"
@@ -80,6 +85,18 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
             return self._session
         self._session = aiohttp.ClientSession()
         return self._session
+
+    def scoped_unique_id(self, legacy_unique_id: str) -> str:
+        """Devuelve un unique_id estable, preservando los IDs locales actuales."""
+        if self.connection_type == "local":
+            return legacy_unique_id
+        return f"{legacy_unique_id}_{self.uid_scope}"
+
+    def scoped_device_identifier(self, legacy_identifier: str) -> str:
+        """Devuelve un identificador de dispositivo estable para evitar colisiones."""
+        if self.connection_type == "local":
+            return legacy_identifier
+        return f"{self.uid_scope}::{legacy_identifier}"
 
     async def _detect_prefix(self) -> None:
         """Detecta prefijo ('', '/api/v1') probando primero el esquema preferido y, si falla, el alternativo."""

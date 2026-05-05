@@ -24,6 +24,24 @@
       },
       "ventilation": {
         "name": "Ventilación"
+      },
+      "sleep": {
+        "name": "Sleep"
+      },
+      "slats_vertical": {
+        "name": "Vertical slats"
+      },
+      "slats_horizontal": {
+        "name": "Horizontal slats"
+      },
+      "slats_vswing": {
+        "name": "Vertical swing"
+      },
+      "slats_hswing": {
+        "name": "Horizontal swing"
+      },
+      "erv_mode": {
+        "name": "ERV mode"
       }
     },
     "sensor": {
@@ -179,6 +197,36 @@
       },
       "airzone_iaq_ventmode": {
         "name": "Modo de ventilación IAQ"
+      },
+      "energy_consump": {
+        "name": "Energy consumption"
+      },
+      "energy_produced": {
+        "name": "Energy produced"
+      },
+      "power_gen_heat": {
+        "name": "Heat generation power"
+      },
+      "consumption_ue": {
+        "name": "UE consumption"
+      },
+      "battery": {
+        "name": "Battery level"
+      },
+      "coverage": {
+        "name": "Coverage"
+      },
+      "sleep": {
+        "name": "Sleep timer"
+      },
+      "aq_quality": {
+        "name": "Air quality"
+      },
+      "acs_temp": {
+        "name": "DHW temperature"
+      },
+      "acs_setpoint": {
+        "name": "DHW setpoint"
       }
     },
     "sensor.airzone_system_id": "ID do sistema",
@@ -196,7 +244,38 @@
     "sensor.airzone_iaq_pressure": "Presión atmosférica",
     "sensor.airzone_iaq_index": "Índice de calidade do aire",
     "sensor.airzone_iaq_score": "Puntuación de calidade do aire",
-    "sensor.airzone_iaq_ventmode": "Modo de ventilación IAQ"
+    "sensor.airzone_iaq_ventmode": "Modo de ventilación IAQ",
+    "binary_sensor": {
+      "battery_low": {
+        "name": "Low battery"
+      },
+      "open_window": {
+        "name": "Open window"
+      },
+      "antifreeze": {
+        "name": "Antifreeze"
+      },
+      "cloud_connected": {
+        "name": "Cloud connected"
+      },
+      "mc_connected": {
+        "name": "MC connected"
+      },
+      "needs_ventilation": {
+        "name": "Needs ventilation"
+      },
+      "cond_risk_master": {
+        "name": "Condensation risk (master)"
+      }
+    },
+    "switch": {
+      "acs_power": {
+        "name": "DHW power"
+      },
+      "acs_powerful": {
+        "name": "DHW powerful mode"
+      }
+    }
   },
   "config": {
     "step": {
@@ -205,7 +284,8 @@
         "description": "Conecta coa túa API local de Airzone (servidor web).",
         "data": {
           "host": "Host",
-          "port": "Porto"
+          "port": "Porto",
+          "connection_type": "Connection type"
         }
       },
       "prefix": {
@@ -214,11 +294,43 @@
         "data": {
           "api_prefix": "Prefixo da API"
         }
+      },
+      "local": {
+        "title": "Airzone Control - Local API",
+        "description": "Connect to your Airzone Local API (webserver).",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      },
+      "cloud": {
+        "title": "Airzone Control - Cloud API",
+        "description": "Sign in with your Airzone Cloud account.",
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "cloud_profile": "Cloud profile",
+          "cloud_include_categories": "Cloud categories to include",
+          "cloud_include_device_ids": "Cloud devices to include",
+          "cloud_include_bound_iaqs": "Include IAQ sensors linked to systems or zones",
+          "cloud_exclude_iaq_names": "IAQ sensor names to exclude"
+        }
+      },
+      "cloud_devices": {
+        "title": "Airzone Control - Cloud devices",
+        "description": "Select the Cloud devices this entry should expose.",
+        "data": {
+          "cloud_include_device_ids": "Cloud devices to include"
+        }
       }
     },
     "error": {
       "cannot_connect": "Non se pode conectar. Revisa host/porto e que o servidor web de Airzone sexa accesible.",
-      "no_host": "Introduce un host."
+      "no_host": "Introduce un host.",
+      "no_email": "Please enter an email.",
+      "no_password": "Please enter a password.",
+      "invalid_auth": "Invalid Airzone Cloud credentials.",
+      "user_not_confirmed": "Your Airzone Cloud account is not confirmed yet."
     },
     "abort": {
       "already_configured": "Este host xa está configurado."
@@ -246,7 +358,12 @@
           "group_7_zones": "Grupo 7 - Zonas",
           "group_8_name": "Grupo 8 - Nome",
           "group_8_zones": "Grupo 8 - Zonas",
-          "groups_json": "Grupos (JSON avanzado)"
+          "groups_json": "Grupos (JSON avanzado)",
+          "cloud_profile": "Cloud profile",
+          "cloud_include_categories": "Cloud categories to include",
+          "cloud_include_device_ids": "Cloud devices to include",
+          "cloud_include_bound_iaqs": "Include IAQ sensors linked to systems or zones",
+          "cloud_exclude_iaq_names": "IAQ sensor names to exclude"
         },
         "description": "Crea ata 8 grupos lóxicos cun nome e seleccionando as súas zonas. Para instalacións grandes, usa o campo JSON avanzado (ten prioridade sobre os grupos da UI)."
       }
