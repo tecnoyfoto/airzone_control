@@ -13,12 +13,15 @@ The integration is designed for installations with multiple zones, IAQ sensors, 
 
 ## Current Status
 
-Version `1.8.0` adds the first public Cloud API phase. Cloud support is intentionally conservative:
+Version `1.9.0` improves reliability, configuration and entity availability for both Local API and Cloud API:
 
 - Cloud entities are read-only.
 - Cloud write actions are disabled.
-- `select`, `switch`, and `button` platforms are not created for Cloud entries.
-- Cloud climate entities can be exposed, but they are read-only.
+- Local API can be discovered automatically through Zeroconf or configured manually by IP.
+- Cloud entries can request credential renewal from Home Assistant.
+- TLS verification is enabled by default and can be adjusted for compatible local devices.
+- Integration driver registration is optional and disabled by default.
+- Each entity's availability reflects the state of the source providing its data.
 - The default Cloud polling interval is `30` seconds.
 
 Recommended mixed setup:
@@ -38,7 +41,7 @@ Recommended mixed setup:
 - Cloud energy meters.
 - Cloud Wi-Fi IAQ sensors.
 - Multiple config entries, so Local API and Cloud API can coexist without unique ID collisions.
-- Diagnostics download with sensitive fields redacted.
+- Support diagnostics with transport and source-status information.
 
 ## Requirements
 
@@ -110,6 +113,8 @@ Fields:
 
 The integration tries to detect the correct API prefix automatically. If detection fails, it lets you choose a prefix manually.
 
+Devices announced on the network may appear automatically in Home Assistant through Zeroconf. For HTTPS connections, keep TLS verification enabled whenever the device certificate allows it.
+
 Quick checks:
 
 ```text
@@ -134,7 +139,9 @@ Cloud profiles:
 - **Complement Local API**: intended for Local + Cloud mixed installations. It enables energy and IAQ categories and lets you choose exact Cloud devices.
 - **Custom**: lets you choose categories and devices manually.
 
-For a Local + Cloud installation, choose **Complement Local API** and select only the Cloud energy meter or Wi-Fi IAQ sensors you actually want. Leaving the device selection empty means no Cloud devices are published for that complementary entry.
+For a Local + Cloud installation, choose **Complement Local API** and select only the Cloud energy meter or Wi-Fi IAQ sensors you actually want. Complementary and custom profiles require at least one selected device before saving.
+
+If Airzone Cloud rejects credentials that previously worked, Home Assistant can renew them through the reauthentication flow without creating a new entry.
 
 ## Options
 
@@ -147,6 +154,10 @@ Common options:
 - Polling interval.
 - Logical zone groups.
 - Cloud profile and Cloud category/device filters for Cloud entries.
+- TLS verification for Local API entries.
+- Optional integration driver registration on compatible devices.
+
+The minimum interval is `5` seconds for Local API and `15` seconds for Cloud API. Cloud API keeps a default value of `30` seconds.
 
 Saving options reloads the integration automatically.
 
@@ -197,24 +208,18 @@ Cloud API can expose:
 - Cloud energy meter sensors.
 - Cloud ACS/auxiliary data where supported by the integration.
 
-## Privacy and Diagnostics
+## Diagnostics
 
-Diagnostics redact sensitive data, including:
+Files generated for support omit configuration data and identifiers that are not needed to analyze integration behavior. They include technical source and transport status to help troubleshoot issues.
 
-- Passwords and tokens.
-- Email.
-- Host/IP related fields.
-- Cloud user, installation, webserver and device identifiers.
-- MAC/serial/unique IDs.
-
-Cloud device IDs may still be used internally for stable filtering, but diagnostics are redacted before export.
+Internal identifiers may still be used inside Home Assistant to keep entities and filters stable, but they are not included in the support file when they are not needed for analysis.
 
 ## Known Limitations
 
 - Cloud API support is read-only in this release.
 - Cloud write support is intentionally disabled until it is validated safely.
 - Cloud polling should stay conservative. The public default is `30` seconds.
-- Energy Dashboard classification for some Cloud meter fields may need confirmation because some Airzone counters appear to reset by period.
+- The meaning and period of some energy counters may vary by Airzone model or firmware.
 - Not every Airzone device exposes the same Local API fields; entities are created dynamically when fields exist.
 
 ## Troubleshooting

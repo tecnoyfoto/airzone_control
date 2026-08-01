@@ -1,7 +1,7 @@
 """Binary sensors Airzone: por zona (batería/ventana), webserver cloud, MC por sistema y binarios IAQ extra."""
 from __future__ import annotations
 
-from typing import Any, Optional, List
+from typing import Any, Optional
 import math
 
 from homeassistant.components.binary_sensor import (
@@ -10,9 +10,8 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.config_entries import ConfigEntry
-    # noqa
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 
 from .const import DOMAIN
 from .coordinator import AirzoneCoordinator
@@ -43,7 +42,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     entities: list[BinarySensorEntity] = []
 
     # Webserver cloud/local diagnostics
-    if getattr(coord, "expose_webserver_entities", True):
+    ws = coord.webserver or {}
+    if getattr(coord, "expose_webserver_entities", True) and any(
+        key in ws for key in ("cloud_connected", "cloud", "ws_cloud", "az_cloud")
+    ):
         entities.append(WebserverCloudConnectedBinary(coord))
 
     for (sid, zid), zone in (coord.data or {}).items():
@@ -56,17 +58,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
     # MC connected por sistema (si lo reporta)
     for sid in sorted({sid for (sid, _) in (coord.data or {}).keys()}):
-        entities.append(SystemMCConnectedBinary(coord, sid))
+        if "mc_connected" in (coord.get_system(sid) or {}):
+            entities.append(SystemMCConnectedBinary(coord, sid))
 
     # Necesidad de ventilación por IAQ
-    for (sid, iid), _ in (coord.iaqs or {}).items():
-        entities.append(IAQVentilationNeededBinary(coord, sid, iid))
+    for (sid, iid), iaq in (coord.iaqs or {}).items():
+        if "needs_ventilation" in iaq or "need_ventilation" in iaq:
+            entities.append(IAQVentilationNeededBinary(coord, sid, iid))
 
     # Riesgo de condensación tomando zona máster
     for sid in sorted({sid for (sid, _) in (coord.data or {}).keys()}):
         entities.append(CondensationRiskBinary(coord, sid))
 
-    async_add_entities(entities, True)
+    async_add_entities(entities)
 
 
 class _ZoneBase(CoordinatorEntity[AirzoneCoordinator], BinarySensorEntity):
@@ -86,7 +90,7 @@ class _ZoneBase(CoordinatorEntity[AirzoneCoordinator], BinarySensorEntity):
 
     @property
     def available(self) -> bool:
-        return bool(self._zone())
+        return super().available and bool(self._zone())
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -141,6 +145,8 @@ class WebserverCloudConnectedBinary(CoordinatorEntity[AirzoneCoordinator], Binar
     _attr_should_poll = False
     _attr_has_entity_name = True
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: AirzoneCoordinator) -> None:
         super().__init__(coordinator)
@@ -151,8 +157,27 @@ class WebserverCloudConnectedBinary(CoordinatorEntity[AirzoneCoordinator], Binar
     @property
     def is_on(self) -> bool | None:
         ws = self.coordinator.webserver or {}
-        v = ws.get("cloud")
+        v = next(
+            (
+                ws[key]
+                for key in ("cloud_connected", "cloud", "ws_cloud", "az_cloud")
+                if key in ws and ws[key] is not None
+            ),
+            None,
+        )
         return _as_bool(v)
+
+    @property
+    def available(self) -> bool:
+        ws = self.coordinator.webserver or {}
+        return (
+            super().available
+            and getattr(self.coordinator, "webserver_update_success", True)
+            and any(
+                key in ws
+                for key in ("cloud_connected", "cloud", "ws_cloud", "az_cloud")
+            )
+        )
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -185,6 +210,11 @@ class SystemMCConnectedBinary(CoordinatorEntity[AirzoneCoordinator], BinarySenso
         return _as_bool(v)
 
     @property
+    def available(self) -> bool:
+        system = self.coordinator.get_system(self._sid) or {}
+        return super().available and "mc_connected" in system
+
+    @property
     def device_info(self) -> DeviceInfo:
         return DeviceInfo(
             identifiers={(DOMAIN, self.coordinator.scoped_device_identifier(f"system-{self._sid}"))},
@@ -214,7 +244,13 @@ class IAQVentilationNeededBinary(CoordinatorEntity[AirzoneCoordinator], BinarySe
 
     @property
     def available(self) -> bool:
-        return bool(self._iaq())
+        key = (self._sid, self._iid)
+        return (
+            super().available
+            and bool(self._iaq())
+            and getattr(self.coordinator, "iaq_update_success", True)
+            and key not in getattr(self.coordinator, "cloud_stale_iaqs", set())
+        )
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -236,19 +272,14 @@ class IAQVentilationNeededBinary(CoordinatorEntity[AirzoneCoordinator], BinarySe
         parsed = _as_bool(explicit)
         if parsed is not None:
             return parsed
-        co2 = d.get("co2_value") if d.get("co2_value") is not None else d.get("co2")
-        if co2 is None:
-            return None
-        try:
-            return bool(float(co2) >= 1200)
-        except Exception:
-            return None
+        return None
 
 
 class CondensationRiskBinary(CoordinatorEntity[AirzoneCoordinator], BinarySensorEntity):
     _attr_should_poll = False
     _attr_has_entity_name = True
     _attr_icon = "mdi:water-percent-alert"
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_name = None
 
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
@@ -260,12 +291,14 @@ class CondensationRiskBinary(CoordinatorEntity[AirzoneCoordinator], BinarySensor
 
     def _z(self) -> dict:
         mzid = self.coordinator.master_zone_id(self._sid)
+        if mzid is None:
+            return {}
         return self.coordinator.get_zone(self._sid, mzid) or {}
 
     @property
     def available(self) -> bool:
         z = self._z()
-        return "roomTemp" in z and "humidity" in z
+        return super().available and "roomTemp" in z and "humidity" in z
 
     @property
     def device_info(self) -> DeviceInfo:

@@ -13,12 +13,15 @@ La integración está pensada para instalaciones con varias zonas, sensores IAQ 
 
 ## Estado Actual
 
-La versión `1.8.0` añade la primera fase pública de Cloud API. El soporte Cloud es conservador a propósito:
+La versión `1.9.0` mejora la fiabilidad, la configuración y la disponibilidad de entidades tanto para Local API como para Cloud API:
 
 - Las entidades Cloud son de solo lectura.
 - La escritura Cloud está desactivada.
-- Las plataformas `select`, `switch` y `button` no se crean para entradas Cloud.
-- Las entidades climate Cloud pueden exponerse, pero son de solo lectura.
+- Local API puede descubrirse automáticamente mediante Zeroconf o configurarse manualmente por IP.
+- Las entradas Cloud pueden solicitar la renovación de credenciales desde Home Assistant.
+- La verificación TLS está activada por defecto y puede ajustarse para equipos locales compatibles.
+- El registro del driver de integración es opcional y está desactivado por defecto.
+- La disponibilidad de cada entidad refleja el estado de la fuente que proporciona sus datos.
 - El intervalo de sondeo Cloud por defecto es de `30` segundos.
 
 Configuración mixta recomendada:
@@ -38,7 +41,7 @@ Configuración mixta recomendada:
 - Medidores de energía Cloud.
 - Sondas IAQ Wi-Fi Cloud.
 - Varias entradas de configuración, para que Local API y Cloud API puedan convivir sin colisiones de identificadores.
-- Descarga de diagnósticos con datos sensibles redactados.
+- Diagnósticos de soporte con información de transporte y estado de las fuentes.
 
 ## Requisitos
 
@@ -110,6 +113,8 @@ Campos:
 
 La integración intenta detectar automáticamente el prefijo correcto de la API. Si no puede detectarlo, permite elegirlo manualmente.
 
+Los equipos anunciados en la red pueden aparecer automáticamente en Home Assistant mediante Zeroconf. Para conexiones HTTPS, mantén activada la verificación TLS siempre que el certificado del equipo lo permita.
+
 Comprobaciones rápidas:
 
 ```text
@@ -134,7 +139,9 @@ Perfiles Cloud:
 - **Complementar Local API**: pensado para instalaciones mixtas Local + Cloud. Activa categorías de energía e IAQ y permite elegir dispositivos concretos.
 - **Personalizado**: permite elegir categorías y dispositivos manualmente.
 
-Para una instalación Local + Cloud, elige **Complementar Local API** y selecciona solo el medidor Cloud o las sondas IAQ Wi-Fi que realmente quieras. Si dejas vacía la selección de dispositivos, esa entrada complementaria no publicará dispositivos Cloud.
+Para una instalación Local + Cloud, elige **Complementar Local API** y selecciona solo el medidor Cloud o las sondas IAQ Wi-Fi que realmente quieras. Los perfiles complementario y personalizado requieren seleccionar al menos un dispositivo antes de guardar.
+
+Si Airzone Cloud rechaza unas credenciales que habían funcionado anteriormente, Home Assistant permite renovarlas desde el flujo de reautenticación sin crear una entrada nueva.
 
 ## Opciones
 
@@ -147,6 +154,10 @@ Opciones habituales:
 - Intervalo de sondeo.
 - Grupos lógicos de zonas.
 - Perfil Cloud y filtros de categoría/dispositivo en entradas Cloud.
+- Verificación TLS para entradas Local API.
+- Registro opcional del driver de integración en equipos compatibles.
+
+El intervalo mínimo es de `5` segundos para Local API y `15` segundos para Cloud API. Cloud API mantiene un valor predeterminado de `30` segundos.
 
 Al guardar opciones, la integración se recarga automáticamente.
 
@@ -197,24 +208,18 @@ Cloud API puede exponer:
 - Sensores de medidor energético Cloud.
 - Datos Cloud ACS/auxiliares cuando están soportados por la integración.
 
-## Privacidad y Diagnósticos
+## Diagnósticos
 
-Los diagnósticos redactan datos sensibles, incluyendo:
+Los archivos generados para soporte omiten datos de configuración e identificadores que no son necesarios para analizar el funcionamiento de la integración. Incluyen información técnica de estado y transporte para facilitar la resolución de incidencias.
 
-- Contraseñas y tokens.
-- Email.
-- Campos relacionados con host/IP.
-- Identificadores Cloud de usuario, instalación, webserver y dispositivo.
-- MAC, números de serie e identificadores únicos.
-
-Los IDs de dispositivos Cloud pueden usarse internamente para filtros estables, pero se redactan en la exportación de diagnósticos.
+Los identificadores internos pueden seguir utilizándose dentro de Home Assistant para mantener entidades y filtros estables, pero no se incluyen en el archivo de soporte cuando no son necesarios para el análisis.
 
 ## Limitaciones Conocidas
 
 - Cloud API es solo lectura en esta versión.
 - La escritura Cloud está desactivada hasta que pueda validarse con seguridad.
 - El sondeo Cloud debe ser conservador. El valor público por defecto es `30` segundos.
-- La clasificación de algunos campos del medidor para Energy Dashboard puede requerir confirmación, porque algunos contadores Airzone parecen reiniciarse por periodo.
+- El significado y periodo de algunos contadores energéticos puede variar según el modelo o firmware Airzone.
 - No todos los equipos Airzone exponen los mismos campos de Local API; las entidades se crean dinámicamente cuando existen datos.
 
 ## Solución de Problemas

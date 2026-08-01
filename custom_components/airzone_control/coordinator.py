@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import timedelta
-from typing import Any, Dict, Tuple, List, Optional
+from typing import Any, Tuple, Optional
 
 import aiohttp
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN, DEFAULT_HOST, DEFAULT_PORT, DEFAULT_SCAN_INTERVAL
@@ -17,31 +19,62 @@ _LOGGER = logging.getLogger(__name__)
 CANDIDATE_PREFIXES: list[str] = ["", "/api/v1", "/airzone/local/api/v1", "/lapi/v1"]
 INTEGRATION_DRIVER = "homeassistant"
 
+
+class AirzoneData(dict[tuple[int, int], dict]):
+    """Zone map whose equality also accounts for auxiliary coordinator data."""
+
+    def __init__(
+        self,
+        zones: dict[tuple[int, int], dict],
+        comparison_data: tuple[Any, ...],
+    ) -> None:
+        super().__init__(zones)
+        self._comparison_data = comparison_data
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, AirzoneData):
+            return False
+        return dict.__eq__(self, other) and (
+            self._comparison_data == other._comparison_data
+        )
+
+    def __ne__(self, other: object) -> bool:
+        return not self == other
+
+
 class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
     """Coordinador de datos para Airzone Local API (1.76+ → 1.78)."""
 
     def __init__(
         self,
         hass: HomeAssistant,
+        config_entry: ConfigEntry,
         host: str = DEFAULT_HOST,
         port: int = DEFAULT_PORT,
         scan_interval: int = DEFAULT_SCAN_INTERVAL,
         api_prefix: str | None = None,
+        verify_ssl: bool = True,
+        register_integration_driver: bool = False,
     ) -> None:
         self._host = host.strip()
         self._port = int(port or DEFAULT_PORT)
         self._https_port = 3443
         self._prefix: str | None = api_prefix  # puede venir del config_flow
         self._prefer_https: Optional[bool] = None  # autodetección en runtime
+        self._verify_ssl = bool(verify_ssl)
+        self._register_integration_driver = bool(register_integration_driver)
+        scan_seconds = max(2, int(scan_interval or DEFAULT_SCAN_INTERVAL))
 
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=max(2, int(scan_interval or DEFAULT_SCAN_INTERVAL))),
+            update_interval=timedelta(seconds=scan_seconds),
+            config_entry=config_entry,
+            always_update=False,
         )
 
-        self._session: aiohttp.ClientSession | None = None
+        self._session = async_get_clientsession(hass)
 
         # Caches de datos normalizados
         self.webserver: dict | None = None
@@ -54,15 +87,21 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
         # Diagnóstico
         self.transport_hvac: str | None = None
         self.transport_iaq: str | None = None
+        self.transport_webserver: str | None = None
         self.transport_scheme: str | None = None  # "http" o "https"
+        self.iaq_update_success = True
+        self.webserver_update_success = True
 
         # Control "seguir global"
         self._follow_master_enabled: set[int] = set()
+        self._follow_master_tasks: dict[int, asyncio.Task] = {}
 
         # API version y WS info
         self.version: str | None = None
         self.driver: str | None = None
         self._integration_checked = False
+        self._update_count = 0
+        self._metadata_refresh_every = max(1, 60 // scan_seconds)
 
         # Recuperación ante lecturas vacías/intermitentes
         self._hvac_empty_reads = 0
@@ -81,10 +120,19 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
         return f"https://{self._host}:{self._https_port}{(self._prefix or '')}"
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
-        if self._session and not self._session.closed:
-            return self._session
-        self._session = aiohttp.ClientSession()
         return self._session
+
+    def _ssl_option(self, scheme: str) -> bool | None:
+        """Return explicit SSL handling only when verification is disabled."""
+        if scheme == "https" and not self._verify_ssl:
+            return False
+        return None
+
+    def _base_for(self, scheme: str, prefix: str | None = None) -> str:
+        """Build an API base URL without unsafe string replacement."""
+        port = self._https_port if scheme == "https" else self._port
+        effective_prefix = self._prefix if prefix is None else prefix
+        return f"{scheme}://{self._host}:{port}{effective_prefix or ''}"
 
     def scoped_unique_id(self, legacy_unique_id: str) -> str:
         """Devuelve un unique_id estable, preservando los IDs locales actuales."""
@@ -100,36 +148,44 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
 
     async def _detect_prefix(self) -> None:
         """Detecta prefijo ('', '/api/v1') probando primero el esquema preferido y, si falla, el alternativo."""
-        if self._prefix is not None:
+        if self._prefix is not None and self._prefer_https is not None:
             return
         timeout = 6
         s = await self._ensure_session()
+        prefixes = (
+            [self._prefix]
+            if self._prefix is not None
+            else CANDIDATE_PREFIXES
+        )
 
         # Orden de prueba: si ya se decidió https/http, respetarlo; si no, http primero.
         schemes = ["https", "http"] if self._prefer_https else ["http", "https"]
 
         for scheme in schemes:
-            for pref in CANDIDATE_PREFIXES:
-                base = (self._https_base() if scheme == "https" else self._http_base()).replace((self._prefix or ""), pref)
+            for pref in prefixes:
+                base = self._base_for(scheme, pref)
+                ssl_opt = self._ssl_option(scheme)
                 try:
-                    async with s.get(f"{base}/webserver", timeout=timeout, ssl=(False if scheme == "https" else None)) as r:
-                        if r.status == 200:
+                    async with s.get(f"{base}/webserver", timeout=timeout, ssl=ssl_opt) as r:
+                        if 200 <= r.status < 300:
                             self._prefix = pref
                             self._prefer_https = (scheme == "https")
                             self.transport_scheme = scheme
+                            self.transport_webserver = "GET"
                             _LOGGER.debug("Detected API prefix via GET /webserver: %s (scheme=%s)", pref, scheme)
                             return
-                except Exception:
+                except (aiohttp.ClientError, TimeoutError):
                     pass
                 try:
-                    async with s.post(f"{base}/webserver", json={}, timeout=timeout, ssl=(False if scheme == "https" else None)) as r:
-                        if r.status == 200:
+                    async with s.post(f"{base}/webserver", json={}, timeout=timeout, ssl=ssl_opt) as r:
+                        if 200 <= r.status < 300:
                             self._prefix = pref
                             self._prefer_https = (scheme == "https")
                             self.transport_scheme = scheme
+                            self.transport_webserver = "POST"
                             _LOGGER.debug("Detected API prefix via POST /webserver: %s (scheme=%s)", pref, scheme)
                             return
-                except Exception:
+                except (aiohttp.ClientError, TimeoutError):
                     pass
         # Si no detecta, deja _prefix tal cual (None) y que fallen las llamadas con logs útiles.
 
@@ -139,7 +195,7 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
     ) -> dict | list | None:
         """
         Intenta la llamada en orden preferido (http/https) y hace fallback al alternativo.
-        En https no verifica certificado (self-signed de LAPI 1.78).
+        La verificación TLS solo se desactiva mediante una opción explícita.
         """
         await self._detect_prefix()
         s = await self._ensure_session()
@@ -149,20 +205,24 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
         bases = []
         for scheme in order:
             base = self._https_base() if scheme == "https" else self._http_base()
-            ssl_opt = (False if scheme == "https" else None)
+            ssl_opt = self._ssl_option(scheme)
             bases.append((scheme, base, ssl_opt))
 
-        last_txt = ""
         last_status = None
+        last_error: str | None = None
         for scheme, base, ssl_opt in bases:
             url = f"{base}{path}"
             try:
                 if method == "GET":
                     async with s.get(url, params=params, timeout=timeout, ssl=ssl_opt) as resp:
                         txt = await resp.text()
-                        if resp.status != 200:
-                            _LOGGER.debug("%s %s %s -> %s %s", method, path, params, resp.status, txt)
-                            last_status, last_txt = resp.status, txt
+                        if not 200 <= resp.status < 300:
+                            _LOGGER.debug("%s %s failed with HTTP %s", method, path, resp.status)
+                            last_status = resp.status
+                            if resp.status >= 500 and self._prefer_https is not None:
+                                self._prefer_https = scheme == "https"
+                                self.transport_scheme = scheme
+                                return None
                             continue
                         try:
                             data = await resp.json(content_type=None)
@@ -171,9 +231,13 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
                 else:
                     async with s.request(method, url, json=(body or {}), timeout=timeout, ssl=ssl_opt) as resp:
                         txt = await resp.text()
-                        if resp.status != 200:
-                            _LOGGER.debug("%s %s %s -> %s %s", method, path, body, resp.status, txt)
-                            last_status, last_txt = resp.status, txt
+                        if not 200 <= resp.status < 300:
+                            _LOGGER.debug("%s %s failed with HTTP %s", method, path, resp.status)
+                            last_status = resp.status
+                            if resp.status >= 500 and self._prefer_https is not None:
+                                self._prefer_https = scheme == "https"
+                                self.transport_scheme = scheme
+                                return None
                             continue
                         try:
                             data = await resp.json(content_type=None)
@@ -184,12 +248,14 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
                 self._prefer_https = (scheme == "https")
                 self.transport_scheme = scheme
                 return data
-            except Exception as e:
-                last_txt = str(e)
+            except (aiohttp.ClientError, TimeoutError) as err:
+                last_error = type(err).__name__
                 continue
 
         if last_status:
-            _LOGGER.debug("%s %s final error -> %s %s", method, path, last_status, last_txt)
+            _LOGGER.debug("%s %s final error: HTTP %s", method, path, last_status)
+        elif last_error:
+            _LOGGER.debug("%s %s final error: %s", method, path, last_error)
         return None
 
     async def _get_json(self, path: str, params: dict | None = None) -> dict | list | None:
@@ -515,8 +581,17 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
             "capabilities": caps,
         }
 
-    def _determine_system_profile(self, system_id: int) -> dict:
-        zones = self.zones_of_system(system_id)
+    def _determine_system_profile(
+        self,
+        system_id: int,
+        zone_data: dict[tuple[int, int], dict] | None = None,
+    ) -> dict:
+        source = self.data if zone_data is None else zone_data
+        zones = [
+            zone
+            for (sid, _zid), zone in (source or {}).items()
+            if sid == int(system_id)
+        ]
         caps: list[str] = []
         if any("humidity" in (self._determine_zone_profile(z).get("capabilities") or []) for z in zones):
             caps.append("humidity")
@@ -558,6 +633,18 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
         zones = self.zones_of_system(system_id)
         if not zones:
             return None
+        system = self.get_system(system_id) or {}
+        for key in ("master_zoneID", "masterZoneID", "masterzoneID"):
+            try:
+                master_id = int(system[key])
+            except (KeyError, TypeError, ValueError):
+                continue
+            for zone in zones:
+                try:
+                    if int(zone.get("zoneID")) == master_id:
+                        return master_id
+                except (TypeError, ValueError):
+                    continue
         for z in zones:
             for key in ("master", "is_master", "zone_master"):
                 try:
@@ -566,7 +653,7 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
                 except Exception:
                     pass
             name = str(z.get("name") or "").lower()
-            if "master" in name or "principal" in name or "despacho" in name:
+            if "master" in name or "principal" in name:
                 try:
                     return int(z.get("zoneID"))
                 except Exception:
@@ -580,11 +667,34 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
     def is_follow_master_enabled(self, system_id: int) -> bool:
         return int(system_id) in self._follow_master_enabled
 
+    def _schedule_follow_master(self, system_id: int) -> None:
+        """Schedule at most one follow-master enforcement per system."""
+        sid = int(system_id)
+        current = self._follow_master_tasks.get(sid)
+        if current is not None and not current.done():
+            return
+        task = self.hass.async_create_task(self._enforce_follow_master(sid))
+        self._follow_master_tasks[sid] = task
+        task.add_done_callback(
+            lambda completed, system=sid: self._remove_follow_master_task(
+                system,
+                completed,
+            )
+        )
+
+    def _remove_follow_master_task(
+        self,
+        system_id: int,
+        task: asyncio.Task,
+    ) -> None:
+        if self._follow_master_tasks.get(system_id) is task:
+            self._follow_master_tasks.pop(system_id, None)
+
     async def async_set_follow_master(self, system_id: int, enabled: bool) -> None:
         sid = int(system_id)
         if enabled:
             self._follow_master_enabled.add(sid)
-            self.hass.async_create_task(self._enforce_follow_master(sid))
+            self._schedule_follow_master(sid)
         else:
             self._follow_master_enabled.discard(sid)
 
@@ -607,7 +717,7 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
         except Exception:
             pass
 
-        tasks: list[asyncio.Task] = []
+        tasks = []
         for (s, zid), z in (self.data or {}).items():
             if s != sid:
                 continue
@@ -618,18 +728,27 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
             except Exception:
                 cur_on = 0
             if cur_on != desired_on:
-                tasks.append(asyncio.create_task(self.async_set_zone_params(sid, zid, on=desired_on)))
+                tasks.append(
+                    self.async_set_zone_params(
+                        sid, zid, on=desired_on, request_refresh=False
+                    )
+                )
                 continue
             if desired_on == 1 and desired_mode is not None:
                 try:
                     cur_mode = int(z.get("mode"))
                     if cur_mode != desired_mode:
-                        tasks.append(asyncio.create_task(self.async_set_zone_params(sid, zid, mode=desired_mode)))
+                        tasks.append(
+                            self.async_set_zone_params(
+                                sid, zid, mode=desired_mode, request_refresh=False
+                            )
+                        )
                 except Exception:
                     pass
 
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+            self.hass.async_create_task(self.async_request_refresh())
 
     def _known_system_ids(self) -> list[int]:
         """System IDs conocidos a partir del último estado válido."""
@@ -662,39 +781,37 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
 
     async def _fetch_hvac_all(self) -> list[dict]:
         """Lee todas las zonas de todos los sistemas (broadcast) con fallback por systemID real."""
-        # 1) GET con systemid=127 (broadcast documentado) y zoneid=0
-        try:
-            p = await self._get_json("/hvac", params={"systemid": 127, "zoneid": 0})
-            if isinstance(p, (dict, list)):
-                items = self._extract_zone_list(p)
-                if items:
-                    self.transport_hvac = f"GET(127)"
-                    return p
-        except Exception as e:
-            _LOGGER.debug("HVAC GET broadcast(127) failed: %s", e)
+        attempts = [
+            ("GET", 127),
+            ("GET", 0),
+            ("POST", 127),
+            ("POST", 0),
+        ]
+        if self.transport_hvac:
+            preferred = next(
+                (
+                    attempt
+                    for attempt in attempts
+                    if self.transport_hvac == f"{attempt[0]}({attempt[1]})"
+                ),
+                None,
+            )
+            if preferred:
+                attempts.remove(preferred)
+                attempts.insert(0, preferred)
 
-        # 2) GET con systemid=0 (algunos firmwares lo soportan)
-        try:
-            p = await self._get_json("/hvac", params={"systemid": 0, "zoneid": 0})
-            if isinstance(p, (dict, list)):
-                items = self._extract_zone_list(p)
-                if items:
-                    self.transport_hvac = f"GET(0)"
-                    return p
-        except Exception as e:
-            _LOGGER.debug("HVAC GET broadcast(0) failed: %s", e)
-
-        # 3) POST con systemID=127
-        p = await self._post_json("/hvac", {"systemID": 127, "zoneID": 0})
-        if isinstance(p, (dict, list)) and self._extract_zone_list(p):
-            self.transport_hvac = "POST(127)"
-            return p
-
-        # 4) POST con systemID=0
-        p = await self._post_json("/hvac", {"systemID": 0, "zoneID": 0})
-        if isinstance(p, (dict, list)) and self._extract_zone_list(p):
-            self.transport_hvac = "POST(0)"
-            return p
+        for method, system_id in attempts:
+            if method == "GET":
+                payload = await self._get_json(
+                    "/hvac", params={"systemid": system_id, "zoneid": 0}
+                )
+            else:
+                payload = await self._post_json(
+                    "/hvac", {"systemID": system_id, "zoneID": 0}
+                )
+            if isinstance(payload, (dict, list)) and self._extract_zone_list(payload):
+                self.transport_hvac = f"{method}({system_id})"
+                return payload
 
         # 5) Fallback por systemID reales conocidos (sin tocar la lógica de control/PUT)
         combined: list[dict] = []
@@ -738,30 +855,39 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
 
     async def _fetch_iaq_all(self) -> list[dict]:
         """Lee todos los IAQ (broadcast) con fallback por systemID real."""
-        items: list[dict] = []
-        self.transport_iaq = None
+        attempts = [
+            ("GET", 0),
+            ("GET", 127),
+            ("POST", 0),
+            ("POST", 127),
+        ]
+        if self.transport_iaq:
+            preferred = next(
+                (
+                    attempt
+                    for attempt in attempts
+                    if self.transport_iaq == f"{attempt[0]}({attempt[1]})"
+                ),
+                None,
+            )
+            if preferred:
+                attempts.remove(preferred)
+                attempts.insert(0, preferred)
 
-        # 1) GET broadcast 0 / 127
-        for val in (0, 127):
-            try:
-                p = await self._get_json("/iaq", params={"systemid": val, "iaqsensorid": 0})
-                items = self._extract_iaq_list(p)
-                if items:
-                    self.transport_iaq = f"GET({val})"
-                    return items
-            except Exception as e:
-                _LOGGER.debug("IAQ GET broadcast(%s) failed: %s", val, e)
-
-        # 2) POST broadcast 0 / 127
-        for val in (0, 127):
-            try:
-                p = await self._post_json("/iaq", {"systemID": val, "iaqsensorID": 0})
-                items = self._extract_iaq_list(p)
-                if items:
-                    self.transport_iaq = f"POST({val})"
-                    return items
-            except Exception as e:
-                _LOGGER.debug("IAQ POST broadcast(%s) failed: %s", val, e)
+        for method, system_id in attempts:
+            if method == "GET":
+                payload = await self._get_json(
+                    "/iaq",
+                    params={"systemid": system_id, "iaqsensorid": 0},
+                )
+            else:
+                payload = await self._post_json(
+                    "/iaq", {"systemID": system_id, "iaqsensorID": 0}
+                )
+            items = self._extract_iaq_list(payload)
+            if items:
+                self.transport_iaq = f"{method}({system_id})"
+                return items
 
         # 3) Fallback por systemID reales conocidos
         combined: list[dict] = []
@@ -803,8 +929,26 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
             _LOGGER.debug("IAQ system %s fetch failed: %s", sid, e)
             return []
 
+    async def _fetch_webserver(self) -> dict | None:
+        """Fetch webserver metadata, preferring the last successful method."""
+        methods = ["GET", "POST"]
+        if self.transport_webserver in methods:
+            methods.remove(self.transport_webserver)
+            methods.insert(0, self.transport_webserver)
+
+        for method in methods:
+            payload = (
+                await self._get_json("/webserver")
+                if method == "GET"
+                else await self._post_json("/webserver", {})
+            )
+            if isinstance(payload, dict):
+                self.transport_webserver = method
+                return payload
+        return None
+
     async def _ensure_integration_driver(self) -> None:
-        if self._integration_checked:
+        if self._integration_checked or not self._register_integration_driver:
             return
 
         self._integration_checked = True
@@ -837,6 +981,7 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
     # ---------------- update ----------------
 
     async def _async_update_data(self) -> dict[Tuple[int,int], dict]:
+        self._update_count += 1
         # 1) HVAC (todas las zonas)
         try:
             hvac_payload = await self._fetch_hvac_all()
@@ -846,19 +991,13 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
         extracted_zones = self._extract_zone_list(hvac_payload) or []
         mapped = self._map_zones(extracted_zones)
         if mapped:
-            self.data = mapped
             self._hvac_empty_reads = 0
         else:
             self._hvac_empty_reads += 1
-            if self.data:
-                mapped = self.data
-                _LOGGER.warning(
-                    "HVAC update came back empty; keeping last valid state (empty_reads=%s, transport=%s)",
-                    self._hvac_empty_reads,
-                    self.transport_hvac,
-                )
-            else:
-                raise UpdateFailed("HVAC update returned no valid zones")
+            raise UpdateFailed(
+                "HVAC update returned no valid zones "
+                f"(transport={self.transport_hvac})"
+            )
 
         extracted_systems = self._extract_system_list(hvac_payload)
         systems: dict[int, dict] = {
@@ -873,23 +1012,30 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
             systems.setdefault(int(sid), {"systemID": int(sid)})
         self.systems = systems
 
-        # 2) Webserver info (GET con fallback a POST)
-        try:
-            ws = await self._get_json("/webserver")
-            if not isinstance(ws, dict):
-                ws = await self._post_json("/webserver", {})
-            if isinstance(ws, dict):
-                self.webserver = ws
-        except Exception as e:
-            _LOGGER.debug("Webserver fetch error: %s", e)
+        # 2) Webserver info (método exitoso recordado)
+        if (
+            self.webserver is None
+            or self._update_count % self._metadata_refresh_every == 0
+        ):
+            try:
+                ws = await self._fetch_webserver()
+                if isinstance(ws, dict):
+                    self.webserver = ws
+                    self.webserver_update_success = True
+                elif self.webserver is not None:
+                    self.webserver_update_success = False
+            except Exception as e:
+                self.webserver_update_success = False
+                _LOGGER.debug("Webserver fetch error: %s", type(e).__name__)
 
-        try:
-            version_payload = await self._post_json("/version", {})
-            detected_version = self._extract_version(version_payload)
-            if detected_version:
-                self.version = detected_version
-        except Exception as e:
-            _LOGGER.debug("Version fetch error: %s", e)
+        if not self.version:
+            try:
+                version_payload = await self._post_json("/version", {})
+                detected_version = self._extract_version(version_payload)
+                if detected_version:
+                    self.version = detected_version
+            except Exception as e:
+                _LOGGER.debug("Version fetch error: %s", type(e).__name__)
 
         if not self.version and isinstance(self.webserver, dict):
             detected_version = self._extract_version(self.webserver)
@@ -912,30 +1058,48 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
         if new_iaqs:
             self.iaqs = new_iaqs
             self._iaq_empty_reads = 0
+            self.iaq_update_success = True
         elif self.iaqs:
             self._iaq_empty_reads += 1
-            _LOGGER.warning(
-                "IAQ update came back empty; keeping last valid IAQ state (empty_reads=%s, transport=%s)",
-                self._iaq_empty_reads,
-                self.transport_iaq,
-            )
+            if self.iaq_update_success:
+                _LOGGER.warning(
+                    "IAQ update returned no data; IAQ entities will be unavailable"
+                )
+            self.iaq_update_success = False
         else:
             self.iaqs = {}
+            self.iaq_update_success = True
 
         # 4) Perfiles de sistema
         system_ids = sorted({sid for (sid, _z) in mapped.keys()})
         self.system_profiles = {}
         for sid in system_ids:
-            prof = self._determine_system_profile(sid)
+            prof = self._determine_system_profile(sid, mapped)
             prof["zone_count"] = len([1 for (s, _z) in mapped.keys() if s == sid])
             prof["iaq_count"] = len([1 for (s, _i) in self.iaqs.keys() if s == sid]) or (1 if sid in self.iaq_fallback else 0)
             self.system_profiles[sid] = prof
 
         # 5) Enforce follow-master en segundo plano
         for sid in list(self._follow_master_enabled):
-            self.hass.async_create_task(self._enforce_follow_master(sid))
+            self._schedule_follow_master(sid)
 
-        return mapped
+        return AirzoneData(
+            mapped,
+            (
+                self.systems,
+                self.webserver,
+                self.iaqs,
+                self.system_profiles,
+                self.version,
+                self.driver,
+                self.transport_hvac,
+                self.transport_iaq,
+                self.transport_webserver,
+                self.transport_scheme,
+                self.iaq_update_success,
+                self.webserver_update_success,
+            ),
+        )
 
     # ---------------- setters ----------------
 
@@ -951,10 +1115,15 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
             base = self._https_base() if scheme == "https" else self._http_base()
             url = f"{base}/hvac"
             try:
-                async with s.put(url, json=body, timeout=6, ssl=(False if scheme == "https" else None)) as resp:
+                async with s.put(
+                    url,
+                    json=body,
+                    timeout=6,
+                    ssl=self._ssl_option(scheme),
+                ) as resp:
                     txt = await resp.text()
-                    if resp.status != 200:
-                        _LOGGER.error("PUT /hvac %s -> %s %s", body, resp.status, txt)
+                    if not 200 <= resp.status < 300:
+                        _LOGGER.error("PUT /hvac failed with HTTP %s", resp.status)
                         continue
                     try:
                         data = await resp.json(content_type=None)
@@ -967,7 +1136,7 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
                     self.transport_scheme = scheme
                     return data
             except Exception as e:
-                _LOGGER.debug("PUT /hvac %s failed on %s: %s", body, scheme, e)
+                _LOGGER.debug("PUT /hvac failed on %s: %s", scheme, type(e).__name__)
                 continue
 
         raise UpdateFailed("PUT /hvac failed on both http/https")
@@ -983,10 +1152,15 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
             base = self._https_base() if scheme == "https" else self._http_base()
             url = f"{base}/iaq"
             try:
-                async with s.put(url, json=body, timeout=6, ssl=(False if scheme == "https" else None)) as resp:
+                async with s.put(
+                    url,
+                    json=body,
+                    timeout=6,
+                    ssl=self._ssl_option(scheme),
+                ) as resp:
                     txt = await resp.text()
-                    if resp.status != 200:
-                        _LOGGER.error("PUT /iaq %s -> %s %s", body, resp.status, txt)
+                    if not 200 <= resp.status < 300:
+                        _LOGGER.error("PUT /iaq failed with HTTP %s", resp.status)
                         continue
                     try:
                         data = await resp.json(content_type=None)
@@ -997,12 +1171,10 @@ class AirzoneCoordinator(DataUpdateCoordinator[dict[Tuple[int,int], dict]]):
                     self.transport_scheme = scheme
                     return data
             except Exception as e:
-                _LOGGER.debug("PUT /iaq %s failed on %s: %s", body, scheme, e)
+                _LOGGER.debug("PUT /iaq failed on %s: %s", scheme, type(e).__name__)
                 continue
 
         raise UpdateFailed("PUT /iaq failed on both http/https")
 
     async def async_close(self) -> None:
-        if self._session and not self._session.closed:
-            await self._session.close()
-            self._session = None
+        """The shared Home Assistant client session is owned by Home Assistant."""

@@ -38,7 +38,18 @@ TO_REDACT = {
     "serial",
     "serial_number",
     "unique_id",
+    "title",
+    "name",
+    "location",
+    "address",
+    "latitude",
+    "longitude",
 }
+
+_NORMALIZED_REDACT_KEYS = {
+    "".join(char for char in key.casefold() if char.isalnum()) for key in TO_REDACT
+}
+_REDACTED = "**REDACTED**"
 
 
 def _jsonable(obj: Any) -> Any:
@@ -80,6 +91,35 @@ def _jsonable(obj: Any) -> Any:
         return repr(obj)
 
 
+def _redact_api_data(obj: Any) -> Any:
+    """Recursively redact API data using case-insensitive key matching."""
+    if isinstance(obj, Mapping):
+        redacted: dict[str, Any] = {}
+        for raw_key, value in obj.items():
+            key = str(raw_key)
+            normalized_key = "".join(
+                char for char in key.casefold() if char.isalnum()
+            )
+            redacted[key] = (
+                _REDACTED
+                if normalized_key in _NORMALIZED_REDACT_KEYS
+                else _redact_api_data(value)
+            )
+        return redacted
+
+    if isinstance(obj, list):
+        return [_redact_api_data(value) for value in obj]
+
+    return obj
+
+
+def _mapping_values(obj: Any) -> Any:
+    """Drop dynamic mapping keys which may themselves contain identifiers."""
+    if isinstance(obj, Mapping):
+        return list(obj.values())
+    return obj
+
+
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry):
     """Return diagnostics for a config entry."""
     bundle = hass.data[DOMAIN][config_entry.entry_id]
@@ -100,8 +140,49 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry):
         "coordinator": {
             "last_update_success": coordinator.last_update_success,
             "update_interval": str(getattr(coordinator, "update_interval", "")),
+            "connection_type": getattr(coordinator, "connection_type", "unknown"),
+            "transport_scheme": getattr(coordinator, "transport_scheme", None),
+            "transport_hvac": getattr(coordinator, "transport_hvac", None),
+            "transport_iaq": getattr(coordinator, "transport_iaq", None),
+            "transport_webserver": getattr(
+                coordinator,
+                "transport_webserver",
+                None,
+            ),
+            "iaq_update_success": getattr(
+                coordinator,
+                "iaq_update_success",
+                True,
+            ),
+            "webserver_update_success": getattr(
+                coordinator,
+                "webserver_update_success",
+                True,
+            ),
         },
-        "api_data": _jsonable(getattr(coordinator, "data", None)),
+        "api_data": _redact_api_data(
+            _jsonable(
+                {
+                    "zones": _mapping_values(
+                        getattr(coordinator, "data", None)
+                    ),
+                    "systems": _mapping_values(
+                        getattr(coordinator, "systems", None)
+                    ),
+                    "iaqs": _mapping_values(
+                        getattr(coordinator, "iaqs", None)
+                    ),
+                    "webserver": getattr(coordinator, "webserver", None),
+                    "cloud_energy_meters": _mapping_values(
+                        getattr(
+                            coordinator,
+                            "cloud_energy_meters",
+                            None,
+                        )
+                    ),
+                }
+            )
+        ),
     }
 
     return _jsonable(data)

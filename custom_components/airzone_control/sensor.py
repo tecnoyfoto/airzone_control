@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -16,6 +17,18 @@ from .coordinator import AirzoneCoordinator
 from . import i18n
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _first_present_value(data: dict, keys: tuple[str, ...]) -> Any:
+    """Return the first usable value without treating zero or False as missing."""
+    for key in keys:
+        value = data.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str) and value.strip().lower() in ("", "none", "nan"):
+            continue
+        return value
+    return None
 
 
 async def async_setup_entry(
@@ -34,13 +47,6 @@ async def async_setup_entry(
     if not isinstance(coord, AirzoneCoordinator):
         _LOGGER.warning("AirzoneCoordinator not found; aborting sensor setup.")
         return
-
-    # Guardamos el entry en el coordinator si no lo trae (para Options)
-    if not hasattr(coord, "config_entry"):
-        try:
-            coord.config_entry = entry  # type: ignore[attr-defined]
-        except Exception:
-            pass
 
     entities: List[SensorEntity] = []
 
@@ -65,6 +71,23 @@ async def async_setup_entry(
     # ---- Medidores cloud ----
     cloud_energy_meters = getattr(coord, "cloud_energy_meters", None)
     if isinstance(cloud_energy_meters, dict):
+        used_tokens: dict[str, str] = {}
+        energy_uid_tokens: dict[str, str] = {}
+        for raw_meter_id in cloud_energy_meters:
+            meter_id = str(raw_meter_id)
+            base_token = (
+                "".join(
+                    char if char.isalnum() else "_" for char in meter_id
+                ).strip("_")
+                or "meter"
+            )
+            token = base_token
+            if token in used_tokens and used_tokens[token] != meter_id:
+                digest = hashlib.sha256(meter_id.encode()).hexdigest()[:8]
+                token = f"{base_token}_{digest}"
+            used_tokens[token] = meter_id
+            energy_uid_tokens[meter_id] = token
+        coord.cloud_energy_uid_tokens = energy_uid_tokens
         for meter_id, _ in cloud_energy_meters.items():
             entities.extend(_build_cloud_energy_meter_sensors(coord, str(meter_id)))
 
@@ -87,7 +110,14 @@ class _BaseSystemSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
 
     @property
     def available(self) -> bool:
-        return any(1 for (sid, _z) in (self.coordinator.data or {}).keys() if sid == self._sid)
+        return super().available and (
+            self.coordinator.get_system(self._sid) is not None
+            or any(
+                sid == self._sid
+                for (sid, _zid) in (self.coordinator.data or {}).keys()
+            )
+            or any(sid == self._sid for (sid, _iid) in self.coordinator.iaqs)
+        )
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -117,7 +147,7 @@ class _BaseZoneSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
 
     @property
     def available(self) -> bool:
-        return bool(self._zone())
+        return super().available and bool(self._zone())
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -133,19 +163,10 @@ class _BaseZoneSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict | None:
-        z = self._zone()
-        attrs: dict[str, Any] = {
+        return {
             "system_id": self._sid,
             "zone_id": self._zid,
         }
-        # Optional info if available in payload
-        if "thermos_firmware" in z:
-            attrs["thermos_firmware"] = z.get("thermos_firmware")
-        if "thermos_type" in z:
-            attrs["thermos_type"] = z.get("thermos_type")
-        if "thermos_radio" in z:
-            attrs["thermos_radio"] = z.get("thermos_radio")
-        return attrs
 
 
 class _BaseIAQSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
@@ -164,7 +185,13 @@ class _BaseIAQSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
 
     @property
     def available(self) -> bool:
-        return bool(self._iaq())
+        key = (self._sid, self._iid)
+        return (
+            super().available
+            and bool(self._iaq())
+            and getattr(self.coordinator, "iaq_update_success", True)
+            and key not in getattr(self.coordinator, "cloud_stale_iaqs", set())
+        )
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -206,7 +233,16 @@ class _BaseCloudEnergyMeterSensor(CoordinatorEntity[AirzoneCoordinator], SensorE
         self._meter_id = str(meter_id)
         self._key = key
         self._attr_name = name
-        uid_meter = "".join(ch if ch.isalnum() else "_" for ch in self._meter_id).strip("_") or "meter"
+        uid_meter = getattr(coordinator, "cloud_energy_uid_tokens", {}).get(
+            self._meter_id
+        )
+        if not uid_meter:
+            uid_meter = (
+                "".join(
+                    char if char.isalnum() else "_" for char in self._meter_id
+                ).strip("_")
+                or "meter"
+            )
         self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_cloud_energy_{uid_meter}_{key}")
         if unit is not None:
             self._attr_native_unit_of_measurement = unit
@@ -223,7 +259,16 @@ class _BaseCloudEnergyMeterSensor(CoordinatorEntity[AirzoneCoordinator], SensorE
 
     @property
     def available(self) -> bool:
-        return self._key in self._meter()
+        return (
+            super().available
+            and self._key in self._meter()
+            and self._meter_id
+            not in getattr(
+                self.coordinator,
+                "cloud_stale_energy_meters",
+                set(),
+            )
+        )
 
     @property
     def native_value(self) -> Optional[float]:
@@ -293,10 +338,8 @@ def _build_system_sensors(coord: AirzoneCoordinator, sid: int) -> List[SensorEnt
 
     # Perfil (propio de tu integración)
     entities.append(SystemProfileSensor(coord, sid))
-
-    # Conectado MC
-    if "mc_connected" in sysd:
-        entities.append(SystemMCConnectedSensor(coord, sid))
+    # Keep the legacy identifier because it is customized/exposed in this HA.
+    entities.append(SystemCondRiskCompatibilitySensor(coord, sid))
 
     # Firmware / tipo / tecnología / fabricante / num IAQ (solo si existen)
     if "system_firmware" in sysd:
@@ -310,15 +353,37 @@ def _build_system_sensors(coord: AirzoneCoordinator, sid: int) -> List[SensorEnt
     if "num_airqsensors" in sysd:
         entities.append(SystemNumIAQSensor(coord, sid))
 
-    # Temperaturas (vienen por zona)
-    entities.extend([
-        SystemOutdoorTempSensor(coord, sid),
-        SystemReturnTempSensor(coord, sid),
-        SystemWorkTempSensor(coord, sid),
-    ])
-
-    # Placeholder de riesgo de condensación
-    entities.append(SystemCondRiskMasterSensor(coord, sid))
+    zones = coord.zones_of_system(sid)
+    entry = getattr(coord, "config_entry", None)
+    external_map = dict(getattr(entry, "options", {}) or {}).get(
+        "external_temp_map", {}
+    )
+    if (
+        (isinstance(external_map, dict) and (str(sid) in external_map or sid in external_map))
+        or any(
+            _first_present_value(
+                zone,
+                ("ext_temp", "temp_outdoor", "outdoorTemp"),
+            )
+            is not None
+            for zone in zones
+        )
+    ):
+        entities.append(SystemOutdoorTempSensor(coord, sid))
+    if any(
+        _first_present_value(
+            zone,
+            ("temp_return", "return_temp", "returnTemp"),
+        )
+        is not None
+        for zone in zones
+    ):
+        entities.append(SystemReturnTempSensor(coord, sid))
+    if any(
+        _first_present_value(zone, ("work_temp", "workTemp")) is not None
+        for zone in zones
+    ):
+        entities.append(SystemWorkTempSensor(coord, sid))
 
     if "energy_consump" in sysd:
         entities.append(GenericSystemValueSensor(coord, sid, "Energy consumption", "energy_consump", ("energy_consump",), cast=int))
@@ -342,20 +407,22 @@ class SystemProfileSensor(_BaseSystemSensor):
         return prof.get("profile")
 
 
-class SystemMCConnectedSensor(_BaseSystemSensor):
+class SystemCondRiskCompatibilitySensor(_BaseSystemSensor):
+    """Legacy placeholder kept only so existing references remain valid."""
+
+    _attr_entity_registry_enabled_default = False
+
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
-        super().__init__(coordinator, system_id, "mc_connected", "mc_connected")
+        super().__init__(
+            coordinator,
+            system_id,
+            "cond_risk_master",
+            "cond_risk_master",
+        )
 
     @property
-    def native_value(self) -> Optional[str]:
-        d = _system_dict(self.coordinator, self._sid)
-        v = d.get("mc_connected")
-        if v is None:
-            return None
-        try:
-            return i18n.label(self.coordinator.hass, "yes") if int(v) else i18n.label(self.coordinator.hass, "no")
-        except Exception:
-            return str(v)
+    def native_value(self) -> None:
+        return None
 
 
 class SystemFirmwareSensor(_BaseSystemSensor):
@@ -473,7 +540,10 @@ class SystemOutdoorTempSensor(_BaseSystemSensor):
     def _airzone_temperature_c(self) -> float | None:
         """Fallback a la API de Airzone."""
         for z in self.coordinator.zones_of_system(self._sid):
-            v = z.get("ext_temp") or z.get("temp_outdoor") or z.get("outdoorTemp")
+            v = _first_present_value(
+                z,
+                ("ext_temp", "temp_outdoor", "outdoorTemp"),
+            )
             if v is not None:
                 try:
                     return float(v)
@@ -536,7 +606,10 @@ class SystemReturnTempSensor(_BaseSystemSensor):
     @property
     def native_value(self) -> Optional[float]:
         for z in self.coordinator.zones_of_system(self._sid):
-            v = z.get("temp_return") or z.get("return_temp") or z.get("returnTemp")
+            v = _first_present_value(
+                z,
+                ("temp_return", "return_temp", "returnTemp"),
+            )
             if v is not None:
                 try:
                     return float(v)
@@ -555,22 +628,12 @@ class SystemWorkTempSensor(_BaseSystemSensor):
     @property
     def native_value(self) -> Optional[float]:
         for z in self.coordinator.zones_of_system(self._sid):
-            v = z.get("work_temp") or z.get("workTemp")
+            v = _first_present_value(z, ("work_temp", "workTemp"))
             if v is not None:
                 try:
                     return float(v)
                 except Exception:
                     continue
-        return None
-
-
-class SystemCondRiskMasterSensor(_BaseSystemSensor):
-    def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
-        super().__init__(coordinator, system_id, "cond_risk_master", "cond_risk_master")
-
-    @property
-    def native_value(self) -> Optional[str]:
-        # No hay una clave oficial clara a nivel sistema; lo dejamos como placeholder
         return None
 
 
@@ -616,7 +679,7 @@ def _build_zone_sensors(coord: AirzoneCoordinator, sid: int, zid: int) -> List[S
 
     # Ventana abierta (sea propia o externa)
     if has("open_window", "window_external_source"):
-        entities.append(ZoneOpenWindowSensor(coord, sid, zid))
+        entities.append(ZoneOpenWindowCompatibilitySensor(coord, sid, zid))
 
     # Eco adapt (texto off/on)
     if has("eco_adapt"):
@@ -799,25 +862,30 @@ class ZoneTemperatureSensor(_BaseZoneSensor):
 
     @property
     def native_value(self) -> Optional[float]:
-        v = self._zone().get("roomTemp") or self._zone().get("room_temp")
+        v = _first_present_value(self._zone(), ("roomTemp", "room_temp"))
         try:
             return float(v)
         except Exception:
             return None
 
 
-class ZoneOpenWindowSensor(_BaseZoneSensor):
+class ZoneOpenWindowCompatibilitySensor(_BaseZoneSensor):
+    """Legacy numeric alias retained for existing voice-assistant exposure."""
+
+    _attr_entity_registry_enabled_default = False
+
     def __init__(self, coordinator, sid, zid) -> None:
         super().__init__(coordinator, sid, zid, "open_window", "open_window")
-        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> Optional[int]:
-        z = self._zone()
-        v = z.get("open_window", z.get("window_external_source"))
+        value = _first_present_value(
+            self._zone(),
+            ("open_window", "window_external_source"),
+        )
         try:
-            return int(v)
-        except Exception:
+            return int(value)
+        except (TypeError, ValueError):
             return None
 
 
@@ -880,7 +948,7 @@ def _build_webserver_sensors(coord: AirzoneCoordinator) -> List[SensorEntity]:
     ents.append(WSTransportSensor(coord))
 
     if has("cloud_connected", "cloud", "ws_cloud", "az_cloud"):
-        ents.append(WSCloudConnectedSensor(coord))
+        ents.append(WSCloudConnectedCompatibilitySensor(coord))
     if has("api_ver", "version", "ws_firmware"):
         ents.append(WSVersionSensor(coord))
     if has("mac"):
@@ -889,7 +957,7 @@ def _build_webserver_sensors(coord: AirzoneCoordinator) -> List[SensorEntity]:
         ents.append(WSWifiChannelSensor(coord))
     if has("wifi_quality"):
         ents.append(WSWifiQualitySensor(coord))
-        ents.append(WSWifiQualityTextSensor(coord))
+        ents.append(WSWifiQualityTextCompatibilitySensor(coord))
     if has("wifi_rssi"):
         ents.append(WSWifiRSSISensor(coord))
     if has("interface"):
@@ -906,6 +974,8 @@ class _BaseWSSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
     """Base para sensores del Webserver (ws.az)."""
     _attr_should_poll = False
     _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: AirzoneCoordinator, tkey: str, uid_suffix: str) -> None:
         super().__init__(coordinator)
@@ -917,7 +987,11 @@ class _BaseWSSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
 
     @property
     def available(self) -> bool:
-        return bool(self._ws())
+        return (
+            super().available
+            and bool(self._ws())
+            and getattr(self.coordinator, "webserver_update_success", True)
+        )
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -929,23 +1003,6 @@ class _BaseWSSensor(CoordinatorEntity[AirzoneCoordinator], SensorEntity):
             model=ws.get("ws_type") or "ws_az",
             sw_version=ws.get("ws_firmware") or ws.get("version"),
         )
-
-
-class WSCloudConnectedSensor(_BaseWSSensor):
-    """Conectado a la nube Airzone Cloud (sí/no)."""
-    def __init__(self, coordinator: AirzoneCoordinator) -> None:
-        super().__init__(coordinator, "cloud_connected", "cloud_connected")
-
-    @property
-    def native_value(self) -> Optional[str]:
-        d = self._ws()
-        val = d.get("cloud_connected") or d.get("cloud") or d.get("ws_cloud") or d.get("az_cloud")
-        if val is None:
-            return None
-        try:
-            return i18n.label(self.coordinator.hass, "yes") if int(val) else i18n.label(self.coordinator.hass, "no")
-        except Exception:
-            return str(val)
 
 
 class WSVersionSensor(_BaseWSSensor):
@@ -971,6 +1028,27 @@ class WSTransportSensor(_BaseWSSensor):
             return str(val)
         d = self._ws()
         return d.get("transport") or None
+
+
+class WSCloudConnectedCompatibilitySensor(_BaseWSSensor):
+    """Legacy text alias retained for existing voice-assistant exposure."""
+
+    def __init__(self, coordinator: AirzoneCoordinator) -> None:
+        super().__init__(coordinator, "cloud_connected", "cloud_connected")
+
+    @property
+    def native_value(self) -> Optional[str]:
+        value = _first_present_value(
+            self._ws(),
+            ("cloud_connected", "cloud", "ws_cloud", "az_cloud"),
+        )
+        if value is None:
+            return None
+        try:
+            key = "yes" if int(value) else "no"
+            return i18n.label(self.coordinator.hass, key)
+        except (TypeError, ValueError):
+            return str(value)
 
 
 class WSMacSensor(_BaseWSSensor):
@@ -1008,22 +1086,27 @@ class WSWifiQualitySensor(_BaseWSSensor):
             return None
 
 
-class WSWifiQualityTextSensor(_BaseWSSensor):
-    """Calidad Wi-Fi como texto: Muy mala, Baja, Media, Buena, Excelente."""
+class WSWifiQualityTextCompatibilitySensor(_BaseWSSensor):
+    """Legacy text alias retained for existing voice-assistant exposure."""
+
     def __init__(self, coordinator: AirzoneCoordinator) -> None:
         super().__init__(coordinator, "ws_wifi_quality_text", "ws_wifi_quality_text")
 
     @property
     def native_value(self) -> Optional[str]:
-        v = self._ws().get("wifi_quality")
-        if v is None:
-            return None
+        value = self._ws().get("wifi_quality")
         try:
-            q = int(v)
-        except Exception:
+            quality = int(value)
+        except (TypeError, ValueError):
             return None
-        mapping = {0: "very_bad", 1: "bad", 2: "medium", 3: "good", 4: "excellent"}
-        return i18n.label(self.coordinator.hass, mapping.get(q, "unknown"))
+        key = {
+            0: "very_low",
+            1: "low",
+            2: "medium",
+            3: "high",
+            4: "very_high",
+        }.get(quality, "unknown")
+        return i18n.label(self.coordinator.hass, key)
 
 
 class WSWifiRSSISensor(_BaseWSSensor):
@@ -1121,9 +1204,6 @@ def _build_iaq_sensors(coord: AirzoneCoordinator, sid: int, iid: int) -> List[Se
         entities.append(IAQHomeIndexSensor(coord, sid, iid))
     if has("iaq_home_text") or has("iaq_domestic_text"):
         entities.append(IAQHomeIndexTextSensor(coord, sid, iid))
-    if has("needs_ventilation") or has("need_ventilation"):
-        entities.append(IAQNeedsVentSensor(coord, sid, iid))
-
     return entities
 
 
@@ -1143,26 +1223,26 @@ def _build_cloud_energy_meter_sensors(coord: AirzoneCoordinator, meter_id: str) 
         return True
 
     specs = (
-        ("energy_hour_latest", "Last hour energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
-        ("energy_day_latest", "Latest daily energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
-        ("energy_day_current", "Today energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
-        ("energy_month_latest", "Latest monthly energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
-        ("energy_month_current", "Current month energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
-        ("energy_year_latest", "Latest yearly energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
-        ("energy_year_current", "Current year energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("energy_hour_latest", "Last hour energy", "kWh", "energy", SensorStateClass.TOTAL),
+        ("energy_day_latest", "Latest daily energy", "kWh", "energy", SensorStateClass.TOTAL),
+        ("energy_day_current", "Today energy", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
+        ("energy_month_latest", "Latest monthly energy", "kWh", "energy", SensorStateClass.TOTAL),
+        ("energy_month_current", "Current month energy", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
+        ("energy_year_latest", "Latest yearly energy", "kWh", "energy", SensorStateClass.TOTAL),
+        ("energy_year_current", "Current year energy", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
         ("energy_total", "Total energy", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
         ("total_energy", "Total energy", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
         ("energy_accumulated", "Accumulated energy", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
         ("energy_consumed", "Consumed energy", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
-        ("consumption", "Consumption", "kWh", "energy", SensorStateClass.MEASUREMENT),
-        ("energy_acc", "Imported energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
-        ("energy_ret", "Returned energy", "kWh", "energy", SensorStateClass.MEASUREMENT),
-        ("energy1_acc", "Imported energy P1", "kWh", "energy", SensorStateClass.MEASUREMENT),
-        ("energy1_ret", "Returned energy P1", "kWh", "energy", SensorStateClass.MEASUREMENT),
-        ("energy2_acc", "Imported energy P2", "kWh", "energy", SensorStateClass.MEASUREMENT),
-        ("energy2_ret", "Returned energy P2", "kWh", "energy", SensorStateClass.MEASUREMENT),
-        ("energy3_acc", "Imported energy P3", "kWh", "energy", SensorStateClass.MEASUREMENT),
-        ("energy3_ret", "Returned energy P3", "kWh", "energy", SensorStateClass.MEASUREMENT),
+        ("consumption", "Consumption", "kWh", "energy", SensorStateClass.TOTAL),
+        ("energy_acc", "Imported energy", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
+        ("energy_ret", "Returned energy", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
+        ("energy1_acc", "Imported energy P1", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
+        ("energy1_ret", "Returned energy P1", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
+        ("energy2_acc", "Imported energy P2", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
+        ("energy2_ret", "Returned energy P2", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
+        ("energy3_acc", "Imported energy P3", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
+        ("energy3_ret", "Returned energy P3", "kWh", "energy", SensorStateClass.TOTAL_INCREASING),
         ("power", "Power", "W", "power", SensorStateClass.MEASUREMENT),
         ("active_power", "Active power", "W", "power", SensorStateClass.MEASUREMENT),
         ("power_latest", "Latest power", "W", "power", SensorStateClass.MEASUREMENT),
@@ -1306,7 +1386,10 @@ class IAQPM25Sensor(_BaseIAQSensor):
 
     @property
     def native_value(self) -> Optional[float]:
-        v = self._iaq().get("pm2_5_value") or self._iaq().get("pm25_value")
+        v = _first_present_value(
+            self._iaq(),
+            ("pm2_5_value", "pm25_value"),
+        )
         try:
             return float(v)
         except Exception:
@@ -1352,7 +1435,10 @@ class IAQAbsHumiditySensor(_BaseIAQSensor):
 
     @property
     def native_value(self) -> Optional[float]:
-        v = self._iaq().get("abs_humidity_gm3") or self._iaq().get("humidity_abs_gm3")
+        v = _first_present_value(
+            self._iaq(),
+            ("abs_humidity_gm3", "humidity_abs_gm3"),
+        )
         try:
             return float(v)
         except Exception:
@@ -1392,7 +1478,10 @@ class IAQHomeIndexSensor(_BaseIAQSensor):
 
     @property
     def native_value(self) -> Optional[int]:
-        v = self._iaq().get("iaq_home") or self._iaq().get("iaq_domestic")
+        v = _first_present_value(
+            self._iaq(),
+            ("iaq_home", "iaq_domestic"),
+        )
         try:
             return int(v)
         except Exception:
@@ -1406,33 +1495,6 @@ class IAQHomeIndexTextSensor(_BaseIAQSensor):
     @property
     def native_value(self) -> Optional[str]:
         return self._iaq().get("iaq_home_text") or self._iaq().get("iaq_domestic_text")
-
-
-class IAQNeedsVentSensor(_BaseIAQSensor):
-    def __init__(self, coordinator, sid, iid) -> None:
-        super().__init__(coordinator, sid, iid, "needs_ventilation", "needs_ventilation")
-
-    @property
-    def native_value(self) -> Optional[str]:
-        v = self._iaq().get("needs_ventilation") or self._iaq().get("need_ventilation")
-        if v is None:
-            return None
-        try:
-            return i18n.label(self.coordinator.hass, "yes") if int(v) else i18n.label(self.coordinator.hass, "no")
-        except Exception:
-            return None
-
-
-
-def _first_present_value(data: dict, keys: tuple[str, ...]) -> Any:
-    for key in keys:
-        value = data.get(key)
-        if value is None:
-            continue
-        if isinstance(value, str) and value.strip().lower() in ("", "none", "nan"):
-            continue
-        return value
-    return None
 
 
 class GenericSystemValueSensor(_BaseSystemSensor):

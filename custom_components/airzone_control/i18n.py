@@ -15,8 +15,8 @@ def _lang(hass) -> str:
         return "ca"
     if lang.startswith("en"):
         return "en"
-    # per defecte castellà
-    return "es"
+    # English is Home Assistant's translation fallback for unsupported languages.
+    return "en"
 
 
 # -------------------------------------------------------------------
@@ -72,7 +72,7 @@ def label(hass, key: str) -> str:
             "swing": "Oscil·lació",
         },
     }
-    return base.get(L, base["es"]).get(key, key)
+    return base.get(L, base["en"]).get(key, key)
 
 
 # -------------------------------------------------------------------
@@ -110,7 +110,7 @@ def mode_name(hass, code: Optional[int]) -> Optional[str]:
             7: "Automàtic",
         },
     }
-    return names.get(L, names["es"]).get(int(code))
+    return names.get(L, names["en"]).get(int(code))
 
 
 # -------------------------------------------------------------------
@@ -137,7 +137,7 @@ def speed_label(hass, value: int, max_level: Optional[int], values: List[int]) -
             "en": {1: "Low", 2: "Medium", 3: "High", 4: "Very high"},
             "ca": {1: "Baixa", 2: "Mitjana", 3: "Alta", 4: "Molt alta"},
         }
-        name = maps.get(L, maps["es"]).get(idx)
+        name = maps.get(L, maps["en"]).get(idx)
         if name:
             return name
 

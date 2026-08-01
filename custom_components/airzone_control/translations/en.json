@@ -14,16 +14,45 @@
                               },
                    "select":  {
                                   "mode":  {
-                                               "name":  "Mode"
+                                               "name":  "Mode",
+                                               "state":  {
+                                                             "off":  "Off",
+                                                             "cool":  "Cool",
+                                                             "heat":  "Heat",
+                                                             "fan_only":  "Fan",
+                                                             "dry":  "Dry",
+                                                             "auto":  "Auto"
+                                                         }
                                            },
                                   "mode_global":  {
-                                                      "name":  "Mode (global)"
+                                                      "name":  "Mode (global)",
+                                                      "state":  {
+                                                                    "off":  "Off",
+                                                                    "cool":  "Cool",
+                                                                    "heat":  "Heat",
+                                                                    "fan_only":  "Fan",
+                                                                    "dry":  "Dry",
+                                                                    "auto":  "Auto"
+                                                                }
                                                   },
                                   "speed":  {
-                                                "name":  "Speed"
+                                                "name":  "Speed",
+                                                "state":  {
+                                                              "auto":  "Auto",
+                                                              "speed_1":  "Speed 1",
+                                                              "speed_2":  "Speed 2",
+                                                              "speed_3":  "Speed 3",
+                                                              "speed_4":  "Speed 4",
+                                                              "speed_5":  "Speed 5"
+                                                          }
                                             },
                                   "ventilation":  {
-                                                      "name":  "Ventilation"
+                                                      "name":  "Ventilation",
+                                                      "state":  {
+                                                                    "off":  "Off",
+                                                                    "manual":  "Manual",
+                                                                    "auto":  "Auto"
+                                                                }
                                                   },
                                   "sleep":  {
                                                 "name":  "Sleep"
@@ -279,7 +308,33 @@
                },
     "config":  {
                    "step":  {
-                                "user":  {
+                                "reauth_confirm":  {
+
+                                                       "title":  "Renew Airzone Cloud credentials",
+
+                                                       "description":  "Enter valid credentials to reconnect this entry.",
+
+                                                       "data":  {
+
+                                                                    "email":  "Email",
+
+                                                                    "password":  "Password"
+
+                                                                }
+
+                                                   },
+
+                                "zeroconf_confirm":  {
+
+                                                         "title":  "Airzone discovered",
+
+                                                         "description":  "Do you want to configure the {name} controller?",
+
+                                                         "data":  {}
+
+                                                     },
+
+                                "user":  {
                                              "title":  "Airzone Control",
                                              "description":  "Choose how you want to connect to Airzone.",
                                              "data":  {
@@ -291,7 +346,9 @@
                                               "description":  "Connect to your Airzone Local API (webserver).",
                                               "data":  {
                                                            "host":  "Host",
-                                                           "port":  "Port"
+                                                           "port":  "Port",
+
+                                                           "verify_ssl":  "Verify TLS certificate"
                                                        }
                                           },
                                 "cloud":  {
@@ -328,10 +385,14 @@
                                  "no_email":  "Please enter an email.",
                                  "no_password":  "Please enter a password.",
                                  "invalid_auth":  "Invalid Airzone Cloud credentials.",
-                                 "user_not_confirmed":  "Your Airzone Cloud account is not confirmed yet."
+                                 "user_not_confirmed":  "Your Airzone Cloud account is not confirmed yet.",
+
+                                 "no_devices":  "Select at least one Cloud device for this profile."
                              },
                    "abort":  {
-                                 "already_configured":  "This Airzone source is already configured."
+                                 "already_configured":  "This Airzone source is already configured.",
+
+                                 "reauth_successful":  "The credentials were updated successfully."
                              }
                },
     "options":  {
@@ -361,14 +422,20 @@
                                                             "cloud_include_categories":  "Cloud categories to include",
                                                             "cloud_include_device_ids":  "Cloud devices to include",
                                                             "cloud_include_bound_iaqs":  "Include IAQ sensors linked to systems or zones",
-                                                            "cloud_exclude_iaq_names":  "IAQ sensor names to exclude"
+                                                            "cloud_exclude_iaq_names":  "IAQ sensor names to exclude",
+
+                                                            "verify_ssl":  "Verify TLS certificate",
+
+                                                            "register_integration_driver":  "Register Home Assistant as the Airzone driver"
                                                        },
                                               "description":  "Create up to 8 logical groups using names and zone selection. For larger installations, use the advanced JSON field (it overrides the UI groups)."
                                           }
                              },
                     "error":  {
-                                  "invalid_scan_interval":  "Invalid scan interval. Use a value between 2 and 300 seconds.",
-                                  "invalid_json":  "Invalid JSON. It must be a list of group objects."
+                                  "invalid_scan_interval":  "Invalid scan interval. Use 5 to 300 seconds locally or 15 to 300 for Cloud.",
+                                  "invalid_json":  "Invalid JSON. Each group needs a name, a unique identifier, and system/zone references.",
+
+                                  "no_devices":  "Select at least one Cloud device for this profile."
                               }
                 },
     "state":  {

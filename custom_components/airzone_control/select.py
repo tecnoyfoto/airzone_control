@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
@@ -12,9 +11,21 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import AirzoneCoordinator
-from . import i18n
 
 _LOGGER = logging.getLogger(__name__)
+
+MODE_OPTIONS: dict[int, str] = {
+    2: "cool",
+    3: "heat",
+    4: "fan_only",
+    5: "dry",
+    7: "auto",
+}
+VENT_OPTIONS: dict[int, str] = {
+    0: "off",
+    1: "manual",
+    2: "auto",
+}
 
 
 async def async_setup_entry(
@@ -46,7 +57,8 @@ async def async_setup_entry(
 
     # MODO y VELOCIDAD por ZONA
     for (sid, zid), z in (coord.data or {}).items():
-        entities.append(ZoneModeSelect(coord, sid, zid))
+        if "mode" in z or isinstance(z.get("modes"), list):
+            entities.append(ZoneModeSelect(coord, sid, zid))
         try:
             has_speed_values = isinstance(z.get("speed_values"), list) and len(z.get("speed_values")) > 0
             has_speeds = int(z.get("speeds", 0) or 0) > 0
@@ -56,23 +68,24 @@ async def async_setup_entry(
         except Exception:
             pass
 
-        if "sleep" in z or isinstance(z.get("sleep_values"), list):
-            entities.append(ZoneFieldSelect(coord, sid, zid, name="Sleep", unique_suffix="sleep", field="sleep", values_key="sleep_values", default_values=[0, 30, 60, 90, 120], labels={0: i18n.label(coord.hass, "off")}))
-        if "slats_vertical" in z:
-            entities.append(ZoneFieldSelect(coord, sid, zid, name="Vertical slats", unique_suffix="slats_vertical", field="slats_vertical", values_key="slats_v_values", default_values=[0, 1, 2, 3]))
-        if "slats_horizontal" in z:
-            entities.append(ZoneFieldSelect(coord, sid, zid, name="Horizontal slats", unique_suffix="slats_horizontal", field="slats_horizontal", values_key="slats_h_values", default_values=[0, 1, 2, 3]))
-        if "slats_vswing" in z:
-            entities.append(ZoneFieldSelect(coord, sid, zid, name="Vertical swing", unique_suffix="slats_vswing", field="slats_vswing", default_values=[0, 1], labels={0: i18n.label(coord.hass, "off"), 1: i18n.label(coord.hass, "swing")}))
-        if "slats_hswing" in z:
-            entities.append(ZoneFieldSelect(coord, sid, zid, name="Horizontal swing", unique_suffix="slats_hswing", field="slats_hswing", default_values=[0, 1], labels={0: i18n.label(coord.hass, "off"), 1: i18n.label(coord.hass, "swing")}))
-        if "erv_mode" in z or isinstance(z.get("erv_mode_values"), list):
+        if isinstance(z.get("sleep_values"), list) and z.get("sleep_values"):
+            entities.append(ZoneFieldSelect(coord, sid, zid, name="Sleep", unique_suffix="sleep", field="sleep", values_key="sleep_values"))
+        if isinstance(z.get("slats_v_values"), list) and z.get("slats_v_values"):
+            entities.append(ZoneFieldSelect(coord, sid, zid, name="Vertical slats", unique_suffix="slats_vertical", field="slats_vertical", values_key="slats_v_values"))
+        if isinstance(z.get("slats_h_values"), list) and z.get("slats_h_values"):
+            entities.append(ZoneFieldSelect(coord, sid, zid, name="Horizontal slats", unique_suffix="slats_horizontal", field="slats_horizontal", values_key="slats_h_values"))
+        if isinstance(z.get("slats_vswing_values"), list) and z.get("slats_vswing_values"):
+            entities.append(ZoneFieldSelect(coord, sid, zid, name="Vertical swing", unique_suffix="slats_vswing", field="slats_vswing", values_key="slats_vswing_values"))
+        if isinstance(z.get("slats_hswing_values"), list) and z.get("slats_hswing_values"):
+            entities.append(ZoneFieldSelect(coord, sid, zid, name="Horizontal swing", unique_suffix="slats_hswing", field="slats_hswing", values_key="slats_hswing_values"))
+        if isinstance(z.get("erv_mode_values"), list) and z.get("erv_mode_values"):
             entities.append(ZoneFieldSelect(coord, sid, zid, name="ERV mode", unique_suffix="erv_mode", field="erv_mode", values_key="erv_mode_values"))
 
     # IAQ: Modo de ventilación
     if isinstance(getattr(coord, "iaqs", None), dict):
-        for (sid, iid), _iaq in coord.iaqs.items():
-            entities.append(IAQVentModeSelect(coord, sid, iid))
+        for (sid, iid), iaq in coord.iaqs.items():
+            if "iaq_mode_vent" in iaq:
+                entities.append(IAQVentModeSelect(coord, sid, iid))
 
     async_add_entities(entities)
 
@@ -115,13 +128,13 @@ class ZoneModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
                     codes = [cur]
             except Exception:
                 pass
-        known = [c for c in [2, 3, 4, 5, 7] if c in codes] or [2, 3, 4, 5, 7]
+        known = [c for c in [2, 3, 4, 5, 7] if c in codes]
         return known
 
     # -------- SelectEntity --------
     @property
     def available(self) -> bool:
-        return bool(self._zone())
+        return super().available and bool(self._zone())
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -136,25 +149,18 @@ class ZoneModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
 
     @property
     def options(self) -> List[str]:
-        off = i18n.label(self.coordinator.hass, "off")
-        names = [i18n.mode_name(self.coordinator.hass, c) for c in self._zone_modes_codes()]
-        names = [n for n in names if n and n != off]
-        out = [off]
-        for n in names:
-            if n not in out:
-                out.append(n)
-        return out
+        return ["off", *(MODE_OPTIONS[code] for code in self._zone_modes_codes())]
 
     @property
     def current_option(self) -> Optional[str]:
         z = self._zone()
         try:
             if int(z.get("on", 0)) == 0:
-                return i18n.label(self.coordinator.hass, "off")
+                return "off"
         except Exception:
             pass
         try:
-            return i18n.mode_name(self.coordinator.hass, int(z.get("mode")))
+            return MODE_OPTIONS.get(int(z.get("mode")))
         except Exception:
             return None
 
@@ -166,13 +172,13 @@ class ZoneModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
                 option, self._sid, self._zid, self.options
             )
             return
-        if option == i18n.label(self.coordinator.hass, "off"):
+        if option == "off":
             await self.coordinator.async_set_zone_params(self._sid, self._zid, on=0)
             return
 
         # buscar código del nombre
-        for code in [2, 3, 4, 5, 7]:
-            if i18n.mode_name(self.coordinator.hass, code) == option:
+        for code, mode_option in MODE_OPTIONS.items():
+            if mode_option == option:
                 await self.coordinator.async_set_zone_params(self._sid, self._zid, on=1, mode=int(code))
                 return
 
@@ -282,7 +288,7 @@ class GlobalModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
     # -------- SelectEntity --------
     @property
     def available(self) -> bool:
-        return bool(self._zones())
+        return super().available and bool(self._zones())
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -293,12 +299,11 @@ class GlobalModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
 
     @property
     def options(self) -> List[str]:
-        off = i18n.label(self.coordinator.hass, "off")
-        out: List[str] = [off]
+        out: List[str] = ["off"]
 
         for c in self._sys_modes_codes():
-            name = i18n.mode_name(self.coordinator.hass, c) or f"Mode {c}"
-            if name and name != off and name not in out:
+            name = MODE_OPTIONS.get(c, f"mode_{c}")
+            if name not in out:
                 out.append(name)
 
         return out
@@ -309,27 +314,23 @@ class GlobalModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
         if not z:
             return None
 
-        off = i18n.label(self.coordinator.hass, "off")
         try:
             code = int(z.get("mode"))
         except Exception:
             return None
 
         if code in (0, 1):
-            return off
+            return "off"
 
-        name = i18n.mode_name(self.coordinator.hass, code)
-        return name or f"Mode {code}"
+        return MODE_OPTIONS.get(code, f"mode_{code}")
 
     async def async_select_option(self, option: str) -> None:
         option = str(option or "").strip()
         if option not in self.options:
             return
 
-        off = i18n.label(self.coordinator.hass, "off")
-
         # STOP/OFF global: mode=STOP + on=0 en broadcast
-        if option == off:
+        if option == "off":
             stop_code = self._detect_stop_code()
             await self.coordinator.async_set_zone_params(self._sid, 0, mode=int(stop_code), on=0)
             return
@@ -337,16 +338,15 @@ class GlobalModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
         # Otros modos: solo cambia el `mode` en broadcast
         code: Optional[int] = None
         for c in self._sys_modes_codes():
-            name = i18n.mode_name(self.coordinator.hass, c) or f"Mode {c}"
+            name = MODE_OPTIONS.get(c, f"mode_{c}")
             if name == option:
                 code = int(c)
                 break
 
         if code is None:
-            # Fallback: "Mode X"
             try:
                 import re as _re
-                m = _re.match(r"(?i)^mode\s+(\d+)$", option)
+                m = _re.match(r"^mode_(\d+)$", option)
                 if m:
                     code = int(m.group(1))
             except Exception:
@@ -417,9 +417,7 @@ class ZoneFanSpeedSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
         return vals
 
     def _label_for(self, value: int) -> str:
-        values = self._speed_values()
-        max_level = max([v for v in values if v != 0], default=None)
-        return i18n.speed_label(self.coordinator.hass, value, max_level, values)
+        return "auto" if value == 0 else f"speed_{value}"
 
     def _rev_map(self) -> Dict[str, int]:
         return {self._label_for(v): v for v in self._speed_values()}
@@ -428,7 +426,7 @@ class ZoneFanSpeedSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
     @property
     def available(self) -> bool:
         try:
-            return bool(self._speed_values())
+            return super().available and bool(self._speed_values())
         except Exception:
             return False
 
@@ -499,7 +497,13 @@ class IAQVentModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
     @property
     def available(self) -> bool:
         d = self._iaq()
-        return "iaq_mode_vent" in d
+        key = (self._sid, self._iid)
+        return (
+            super().available
+            and "iaq_mode_vent" in d
+            and getattr(self.coordinator, "iaq_update_success", True)
+            and key not in getattr(self.coordinator, "cloud_stale_iaqs", set())
+        )
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -513,14 +517,14 @@ class IAQVentModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
 
     @property
     def options(self) -> List[str]:
-        return [i18n.iaq_vent_label(self.coordinator.hass, c) for c in self._VENT_CODES]
+        return [VENT_OPTIONS[code] for code in self._VENT_CODES]
 
     @property
     def current_option(self) -> Optional[str]:
         iaq = self._iaq()
         try:
             code = int(iaq.get("iaq_mode_vent"))
-            return i18n.iaq_vent_label(self.coordinator.hass, code)
+            return VENT_OPTIONS.get(code)
         except Exception:
             return None
 
@@ -528,7 +532,7 @@ class IAQVentModeSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
         option = str(option or "").strip()
         code = None
         for cand in self._VENT_CODES:
-            if i18n.iaq_vent_label(self.coordinator.hass, cand) == option:
+            if VENT_OPTIONS[cand] == option:
                 code = cand
                 break
         if code is None:
@@ -612,7 +616,7 @@ class ZoneFieldSelect(CoordinatorEntity[AirzoneCoordinator], SelectEntity):
 
     @property
     def available(self) -> bool:
-        return bool(self._zone()) and bool(self._values())
+        return super().available and bool(self._zone()) and bool(self._values())
 
     @property
     def device_info(self) -> DeviceInfo:

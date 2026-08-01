@@ -19,8 +19,10 @@ from .const import (
     CONF_EMAIL,
     CONF_PASSWORD,
     CONF_PORT,
+    CONF_REGISTER_INTEGRATION_DRIVER,
     CONF_SCAN_INTERVAL,
     CONF_USER_ID,
+    CONF_VERIFY_SSL,
     DEFAULT_CLOUD_EXCLUDE_IAQ_NAMES,
     DEFAULT_CLOUD_INCLUDE_BOUND_IAQS,
     DEFAULT_CLOUD_INCLUDE_CATEGORIES,
@@ -29,7 +31,9 @@ from .const import (
     DEFAULT_CLOUD_SCAN_INTERVAL,
     DEFAULT_HOST,
     DEFAULT_PORT,
+    DEFAULT_REGISTER_INTEGRATION_DRIVER,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_VERIFY_SSL,
     DOMAIN,
     CLOUD_PROFILE_COMPLEMENT_LOCAL,
     CLOUD_PROFILE_CUSTOM,
@@ -74,13 +78,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             CONF_CLOUD_INCLUDE_DEVICE_IDS,
             entry.data.get(CONF_CLOUD_INCLUDE_DEVICE_IDS, DEFAULT_CLOUD_INCLUDE_DEVICE_IDS),
         )
-        require_device_selection = (
-            cloud_profile in {CLOUD_PROFILE_COMPLEMENT_LOCAL, CLOUD_PROFILE_CUSTOM}
-            and (
-                CONF_CLOUD_INCLUDE_DEVICE_IDS in entry.options
-                or CONF_CLOUD_INCLUDE_DEVICE_IDS in entry.data
-            )
-        )
+        require_device_selection = cloud_profile in {
+            CLOUD_PROFILE_COMPLEMENT_LOCAL,
+            CLOUD_PROFILE_CUSTOM,
+        }
         include_bound_iaqs = entry.options.get(CONF_CLOUD_INCLUDE_BOUND_IAQS)
         if include_bound_iaqs is None:
             include_bound_iaqs = (
@@ -91,6 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         coordinator = AirzoneCloudCoordinator(
             hass,
+            config_entry=entry,
             email=entry.data.get(CONF_EMAIL, ""),
             password=entry.data.get(CONF_PASSWORD, ""),
             scan_interval=scan,
@@ -115,13 +117,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         api_prefix = entry.data.get("api_prefix")
         coordinator = AirzoneCoordinator(
             hass,
+            config_entry=entry,
             host=host,
             port=port,
             scan_interval=scan,
             api_prefix=api_prefix,
+            verify_ssl=entry.options.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
+            register_integration_driver=entry.options.get(
+                CONF_REGISTER_INTEGRATION_DRIVER,
+                DEFAULT_REGISTER_INTEGRATION_DRIVER,
+            ),
         )
-
-    coordinator.config_entry = entry  # type: ignore[attr-defined]
 
     await coordinator.async_config_entry_first_refresh()
 
@@ -130,6 +136,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
         "connection_type": connection_type,
     }
+    entry.runtime_data = coordinator
 
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -140,9 +147,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Descargar una config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    bundle = hass.data.get(DOMAIN, {}).pop(entry.entry_id, {})
-    coord: AirzoneCoordinator | None = bundle.get("coordinator")
-    if coord:
-        await coord.async_close()
+    if unload_ok:
+        bundle = hass.data.get(DOMAIN, {}).pop(entry.entry_id, {})
+        coord: AirzoneCoordinator | None = bundle.get("coordinator")
+        if coord:
+            await coord.async_close()
 
     return unload_ok

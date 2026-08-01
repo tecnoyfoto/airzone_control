@@ -2,6 +2,45 @@
 
 # Changelog
 
+## 1.9.0 - 2026-08-01
+
+### Added
+
+- Automatic discovery of Local API controllers through Zeroconf, while keeping manual IP configuration available.
+- Reauthentication flow for renewing Cloud API entry credentials.
+- TLS verification option for Local API connections; it remains enabled by default.
+- Independent option to register the integration driver on compatible devices; it remains disabled by default.
+- Additional transport and source-status information in support diagnostics.
+
+### Changed
+
+- HTTP connections reuse the Home Assistant managed session and follow the current config-entry lifecycle.
+- Entity availability reflects the state of its specific source: HVAC, IAQ, webserver or Cloud device.
+- Cloud installation discovery supports paginated results.
+- The `complement_local` and `custom` Cloud profiles require at least one selected device before saving.
+- The configurable minimum polling interval is `5` seconds for Local API and `15` seconds for Cloud API; the default Cloud value remains `30` seconds.
+- Optional entities are created only when the device provides their corresponding fields.
+- Mode, fan-speed and air-quality states use stable identifiers and Home Assistant translations.
+- English is now the fallback language when a translation is unavailable.
+- Cloud energy counter state classes have been adjusted to match the meaning of each field.
+- The system switch turns all its zones on or off, and follow-master mode restores its last state after a restart.
+
+### Fixed
+
+- HVAC activity calculation for zone, system and group thermostats now uses the actual demand reported by the device.
+- Valid numeric zero values are preserved in sensors and Cloud data.
+- Last valid state is retained without presenting a source as available when its update has failed.
+- Logical groups, zone references and duplicate identifiers are validated before options are saved.
+- Duplicate tasks are avoided while synchronizing zones with the master zone.
+- Transport selection and periodic device metadata refresh have been improved.
+- Corrected the Zeroconf discovery patterns in the manifest.
+
+### Notes
+
+- Cloud API remains read-only.
+- Files generated for support omit configuration data and identifiers that are not needed to analyze integration behavior.
+- HTTP response logging has been simplified to retain only the information needed for troubleshooting.
+
 ## 1.8.0 - 2026-05-05
 
 ### Added

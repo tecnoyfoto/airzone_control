@@ -12,6 +12,7 @@ from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers import selector
 import homeassistant.helpers.config_validation as cv
 
 from .const import (
@@ -36,8 +37,10 @@ from .const import (
     CONF_HOST,
     CONF_PASSWORD,
     CONF_PORT,
+    CONF_REGISTER_INTEGRATION_DRIVER,
     CONF_SCAN_INTERVAL,
     CONF_USER_ID,
+    CONF_VERIFY_SSL,
     DEFAULT_CLOUD_BASE_URL,
     DEFAULT_CLOUD_EXCLUDE_IAQ_NAMES,
     DEFAULT_CLOUD_INCLUDE_BOUND_IAQS,
@@ -47,7 +50,9 @@ from .const import (
     DEFAULT_CLOUD_PROFILE,
     DEFAULT_HOST,
     DEFAULT_PORT,
+    DEFAULT_REGISTER_INTEGRATION_DRIVER,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_VERIFY_SSL,
     DOMAIN,
 )
 from .coordinator import AirzoneCoordinator
@@ -77,39 +82,71 @@ def _normalize_prefix(prefix: str | None) -> str:
     return pref.rstrip("/")
 
 
-async def _probe_one(hass: HomeAssistant, host: str, port: int, prefix: str) -> bool:
+async def _probe_one(
+    hass: HomeAssistant,
+    host: str,
+    port: int,
+    prefix: str,
+    *,
+    verify_ssl: bool = DEFAULT_VERIFY_SSL,
+) -> bool:
     """Devuelve True si el Airzone responde en esta combinación host/port/prefix."""
     pref = _normalize_prefix(prefix)
-    base = f"http://{host}:{port}{pref}"
     timeout = 6
+    session = async_get_clientsession(hass)
+    candidates = [
+        (f"http://{host}:{port}{pref}", None),
+        (f"https://{host}:3443{pref}", None if verify_ssl else False),
+    ]
 
-    try:
-        async with aiohttp.ClientSession() as session:
+    for base, ssl_option in candidates:
+        try:
             try:
                 with async_timeout.timeout(timeout):
-                    async with session.get(f"{base}/webserver", timeout=timeout) as response:
-                        if response.status == 200:
+                    async with session.get(
+                        f"{base}/webserver",
+                        timeout=timeout,
+                        ssl=ssl_option,
+                    ) as response:
+                        if 200 <= response.status < 300:
                             return True
-            except Exception:
+            except (aiohttp.ClientError, TimeoutError, ValueError):
                 pass
 
             try:
                 with async_timeout.timeout(timeout):
-                    async with session.post(f"{base}/webserver", json={}, timeout=timeout) as response:
-                        if response.status == 200:
+                    async with session.post(
+                        f"{base}/webserver",
+                        json={},
+                        timeout=timeout,
+                        ssl=ssl_option,
+                    ) as response:
+                        if 200 <= response.status < 300:
                             return True
-            except Exception:
+            except (aiohttp.ClientError, TimeoutError, ValueError):
                 pass
-    except Exception:
-        return False
+        except (aiohttp.ClientError, TimeoutError, ValueError):
+            continue
 
     return False
 
 
-async def _autodetect_prefix(hass: HomeAssistant, host: str, port: int) -> str | None:
+async def _autodetect_prefix(
+    hass: HomeAssistant,
+    host: str,
+    port: int,
+    *,
+    verify_ssl: bool = DEFAULT_VERIFY_SSL,
+) -> str | None:
     """Devuelve el primer prefijo que responde o None si ninguno responde."""
     for pref in CANDIDATE_PREFIXES:
-        ok = await _probe_one(hass, host, port, pref)
+        ok = await _probe_one(
+            hass,
+            host,
+            port,
+            pref,
+            verify_ssl=verify_ssl,
+        )
         if ok:
             return _normalize_prefix(pref)
     return None
@@ -186,9 +223,32 @@ async def _fetch_cloud_device_options(
             return {}
         installations_payload = await response.json(content_type=None)
 
-    installations = []
+    installations: list[dict[str, Any]] = []
     if isinstance(installations_payload, dict):
         installations = [item for item in installations_payload.get("installations", []) if isinstance(item, dict)]
+        try:
+            total = int(
+                installations_payload.get("total") or len(installations)
+            )
+        except (TypeError, ValueError):
+            total = len(installations)
+        pages = (total + 9) // 10
+        for page in range(1, pages):
+            async with session.get(
+                f"{base_url}/installations",
+                params={"items": 10, "page": page},
+                headers=headers,
+                timeout=15,
+            ) as response:
+                if response.status >= 400:
+                    continue
+                page_payload = await response.json(content_type=None)
+            if isinstance(page_payload, dict):
+                installations.extend(
+                    item
+                    for item in page_payload.get("installations", [])
+                    if isinstance(item, dict)
+                )
 
     for installation in installations:
         installation_id = installation.get("installation_id")
@@ -224,6 +284,53 @@ def _slugify_id(name: str) -> str:
         slug = slug.replace("__", "_")
     slug = slug.strip("_") or "group"
     return slug
+
+
+def _validate_groups(
+    groups: list[Any],
+    known_zones: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Validate and normalize advanced logical group definitions."""
+    normalized: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for group in groups:
+        if not isinstance(group, dict):
+            raise ValueError("group_not_object")
+        name = str(group.get("name") or "").strip()
+        raw_zones = group.get("zones")
+        if not name or not isinstance(raw_zones, list) or not raw_zones:
+            raise ValueError("group_missing_fields")
+
+        group_id = _slugify_id(str(group.get("id") or name))
+        if group_id in seen_ids:
+            raise ValueError("duplicate_group_id")
+        seen_ids.add(group_id)
+
+        zones: list[str] = []
+        for raw_zone in raw_zones:
+            zone = str(raw_zone).strip()
+            try:
+                system_text, zone_text = zone.split("/", 1)
+                system_id = int(system_text)
+                zone_id = int(zone_text)
+            except (TypeError, ValueError):
+                raise ValueError("invalid_zone_reference") from None
+            if system_id < 0 or zone_id <= 0:
+                raise ValueError("invalid_zone_reference")
+            canonical = f"{system_id}/{zone_id}"
+            if known_zones and canonical not in known_zones:
+                raise ValueError("unknown_zone_reference")
+            if canonical not in zones:
+                zones.append(canonical)
+
+        normalized.append(
+            {
+                "id": group_id,
+                "name": name,
+                "zones": zones,
+            }
+        )
+    return normalized
 
 
 def _parse_zones_from_response(payload: Any) -> dict[str, str]:
@@ -288,10 +395,12 @@ class AirzoneConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._host: str = ""
         self._port: int = DEFAULT_PORT
         self._prefix: str | None = None
+        self._verify_ssl = DEFAULT_VERIFY_SSL
         self._email: str = ""
         self._cloud_data: dict[str, Any] = {}
         self._cloud_options: dict[str, Any] = {}
         self._cloud_device_options: dict[str, str] = {}
+        self._discovery_name = "Airzone"
 
     @staticmethod
     @callback
@@ -317,20 +426,87 @@ class AirzoneConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors={})
 
+    async def async_step_zeroconf(self, discovery_info: Any) -> FlowResult:
+        """Handle a discovered local Airzone controller."""
+        self._host = str(discovery_info.host)
+        self._port = int(discovery_info.port or DEFAULT_PORT)
+        self._discovery_name = str(
+            getattr(discovery_info, "name", None) or "Airzone"
+        ).removesuffix(".")
+
+        await self.async_set_unique_id(f"{self._host}:{self._port}")
+        self._abort_if_unique_id_configured(
+            updates={
+                CONF_HOST: self._host,
+                CONF_PORT: self._port,
+            },
+            reload_on_update=False,
+        )
+        self.context["title_placeholders"] = {"name": self._discovery_name}
+        return await self.async_step_zeroconf_confirm()
+
+    async def async_step_zeroconf_confirm(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Confirm a discovered local Airzone controller."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            prefix = await _autodetect_prefix(
+                self.hass,
+                self._host,
+                self._port,
+                verify_ssl=self._verify_ssl,
+            )
+            if prefix is None:
+                errors["base"] = "cannot_connect"
+            else:
+                return self.async_create_entry(
+                    title=f"Airzone ({self._host})",
+                    data={
+                        CONF_CONNECTION_TYPE: CONNECTION_TYPE_LOCAL,
+                        CONF_HOST: self._host,
+                        CONF_PORT: self._port,
+                        "api_prefix": prefix,
+                    },
+                    options={
+                        CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL,
+                        CONF_GROUPS: [],
+                        CONF_VERIFY_SSL: DEFAULT_VERIFY_SSL,
+                        CONF_REGISTER_INTEGRATION_DRIVER: (
+                            DEFAULT_REGISTER_INTEGRATION_DRIVER
+                        ),
+                    },
+                )
+
+        return self.async_show_form(
+            step_id="zeroconf_confirm",
+            data_schema=vol.Schema({}),
+            errors=errors,
+            description_placeholders={"name": self._discovery_name},
+        )
+
     async def async_step_local(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
 
         if user_input is not None:
             host = (user_input.get(CONF_HOST) or "").strip()
             port = int(user_input.get(CONF_PORT) or DEFAULT_PORT)
+            verify_ssl = bool(user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL))
 
             if not host:
                 errors["base"] = "no_host"
             else:
-                prefix = await _autodetect_prefix(self.hass, host, port)
-                if not prefix:
+                prefix = await _autodetect_prefix(
+                    self.hass,
+                    host,
+                    port,
+                    verify_ssl=verify_ssl,
+                )
+                if prefix is None:
                     self._host = host
                     self._port = port
+                    self._verify_ssl = verify_ssl
                     return await self.async_step_prefix()
 
                 self._host = host
@@ -350,6 +526,8 @@ class AirzoneConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 options = {
                     CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL,
                     CONF_GROUPS: [],
+                    CONF_VERIFY_SSL: verify_ssl,
+                    CONF_REGISTER_INTEGRATION_DRIVER: DEFAULT_REGISTER_INTEGRATION_DRIVER,
                 }
 
                 return self.async_create_entry(
@@ -362,6 +540,7 @@ class AirzoneConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             {
                 vol.Required(CONF_HOST, default=DEFAULT_HOST): str,
                 vol.Required(CONF_PORT, default=DEFAULT_PORT): vol.All(int, vol.Range(min=1, max=65535)),
+                vol.Optional(CONF_VERIFY_SSL, default=DEFAULT_VERIFY_SSL): cv.boolean,
             }
         )
         return self.async_show_form(step_id="local", data_schema=schema, errors=errors)
@@ -431,14 +610,25 @@ class AirzoneConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     except Exception:
                         _LOGGER.exception("Could not fetch Airzone Cloud device list during setup")
                         self._cloud_device_options = {}
-                    if self._cloud_device_options and _cloud_profile_needs_device_selection(cloud_profile):
-                        return await self.async_step_cloud_devices()
-                    return self.async_create_entry(title=f"Airzone Cloud ({email})", data=data, options=options)
+                    if _cloud_profile_needs_device_selection(cloud_profile):
+                        if self._cloud_device_options:
+                            return await self.async_step_cloud_devices()
+                        errors["base"] = "no_devices"
+                    else:
+                        return self.async_create_entry(
+                            title=f"Airzone Cloud ({email})",
+                            data=data,
+                            options=options,
+                        )
 
         schema = vol.Schema(
             {
                 vol.Required(CONF_EMAIL, default=self._email): str,
-                vol.Required(CONF_PASSWORD): str,
+                vol.Required(CONF_PASSWORD): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD,
+                    )
+                ),
                 vol.Optional(
                     CONF_CLOUD_PROFILE,
                     default=DEFAULT_CLOUD_PROFILE,
@@ -461,25 +651,101 @@ class AirzoneConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_cloud_devices(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Allow selecting which Cloud devices this entry should expose."""
+        errors: dict[str, str] = {}
         if user_input is not None:
             selected = list(user_input.get(CONF_CLOUD_INCLUDE_DEVICE_IDS) or [])
-            options = dict(self._cloud_options)
-            options[CONF_CLOUD_INCLUDE_DEVICE_IDS] = selected
-            return self.async_create_entry(
-                title=f"Airzone Cloud ({self._cloud_data.get(CONF_EMAIL)})",
-                data=self._cloud_data,
-                options=options,
-            )
+            if not selected:
+                errors["base"] = "no_devices"
+            else:
+                options = dict(self._cloud_options)
+                options[CONF_CLOUD_INCLUDE_DEVICE_IDS] = selected
+                return self.async_create_entry(
+                    title=f"Airzone Cloud ({self._cloud_data.get(CONF_EMAIL)})",
+                    data=self._cloud_data,
+                    options=options,
+                )
 
         schema = vol.Schema(
             {
-                vol.Optional(
+                vol.Required(
                     CONF_CLOUD_INCLUDE_DEVICE_IDS,
                     default=[],
                 ): cv.multi_select(self._cloud_device_options),
             }
         )
-        return self.async_show_form(step_id="cloud_devices", data_schema=schema, errors={})
+        return self.async_show_form(
+            step_id="cloud_devices",
+            data_schema=schema,
+            errors=errors,
+        )
+
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> FlowResult:
+        """Start a Cloud credential renewal flow."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Validate and store renewed Cloud credentials."""
+        entry = self._get_reauth_entry()
+        errors: dict[str, str] = {}
+        current_email = str(entry.data.get(CONF_EMAIL) or "")
+
+        if user_input is not None:
+            email = str(user_input.get(CONF_EMAIL) or "").strip().lower()
+            password = str(user_input.get(CONF_PASSWORD) or "")
+            try:
+                payload = await _validate_cloud_credentials(
+                    self.hass,
+                    email,
+                    password,
+                )
+            except CloudApiError as err:
+                errors["base"] = (
+                    "user_not_confirmed"
+                    if err.error_id == "userNotConfirmed"
+                    else "invalid_auth"
+                )
+            except (aiohttp.ClientError, TimeoutError):
+                errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception(
+                    "Unexpected Airzone Cloud reauthentication error"
+                )
+                errors["base"] = "cannot_connect"
+            else:
+                user_id = str(
+                    payload.get("_id")
+                    or payload.get("user_id")
+                    or entry.data.get(CONF_USER_ID)
+                    or email
+                )
+                return self.async_update_and_abort(
+                    entry,
+                    data_updates={
+                        CONF_EMAIL: email,
+                        CONF_PASSWORD: password,
+                        CONF_USER_ID: user_id,
+                    },
+                )
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_EMAIL, default=current_email): str,
+                vol.Required(CONF_PASSWORD): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD,
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=schema,
+            errors=errors,
+        )
 
     async def async_step_prefix(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Paso para seleccionar un prefijo si la autodetección local falla."""
@@ -487,7 +753,13 @@ class AirzoneConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             pref = user_input.get("api_prefix") or ""
-            ok = await _probe_one(self.hass, self._host, self._port, pref)
+            ok = await _probe_one(
+                self.hass,
+                self._host,
+                self._port,
+                pref,
+                verify_ssl=self._verify_ssl,
+            )
             if not ok:
                 errors["base"] = "cannot_connect"
             else:
@@ -505,6 +777,8 @@ class AirzoneConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 options = {
                     CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL,
                     CONF_GROUPS: [],
+                    CONF_VERIFY_SSL: self._verify_ssl,
+                    CONF_REGISTER_INTEGRATION_DRIVER: DEFAULT_REGISTER_INTEGRATION_DRIVER,
                 }
                 return self.async_create_entry(
                     title=f"Airzone ({self._host})",
@@ -559,12 +833,16 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             zones[key] = f"{name} ({key})"
         return zones
 
-    async def _fetch_zones_once(self, host: str, port: int, prefix: str) -> dict[str, str]:
+    async def _fetch_zones_once(
+        self,
+        host: str,
+        port: int,
+        prefix: str,
+        *,
+        verify_ssl: bool = DEFAULT_VERIFY_SSL,
+    ) -> dict[str, str]:
         """Intenta obtener zonas desde un prefijo concreto."""
         pref = _normalize_prefix(prefix)
-        base = f"http://{host}:{port}{pref}"
-        url = f"{base}/hvac"
-
         session = async_get_clientsession(self.hass)
         attempts: list[tuple[str, dict[str, Any] | None, dict[str, Any] | None]] = [
             ("POST", None, {"systemID": 0, "zoneID": 0}),
@@ -573,18 +851,33 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             ("GET", {"systemID": 0, "zoneID": 0}, None),
         ]
 
-        for method, params, body in attempts:
-            try:
-                with async_timeout.timeout(6):
-                    async with session.request(method, url, params=params, json=body) as response:
-                        if response.status != 200:
-                            continue
-                        payload = await response.json(content_type=None)
-                        zones = _parse_zones_from_response(payload)
-                        if zones:
-                            return zones
-            except Exception:
-                continue
+        candidates = [
+            (f"http://{host}:{port}{pref}/hvac", None),
+            (
+                f"https://{host}:3443{pref}/hvac",
+                None if verify_ssl else False,
+            ),
+        ]
+
+        for url, ssl_option in candidates:
+            for method, params, body in attempts:
+                try:
+                    with async_timeout.timeout(6):
+                        async with session.request(
+                            method,
+                            url,
+                            params=params,
+                            json=body,
+                            ssl=ssl_option,
+                        ) as response:
+                            if not 200 <= response.status < 300:
+                                continue
+                            payload = await response.json(content_type=None)
+                            zones = _parse_zones_from_response(payload)
+                            if zones:
+                                return zones
+                except (aiohttp.ClientError, TimeoutError, ValueError):
+                    continue
 
         return {}
 
@@ -605,23 +898,33 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         host = self._entry.data.get(CONF_HOST, DEFAULT_HOST)
         port = self._entry.data.get(CONF_PORT, DEFAULT_PORT)
         prefix = self._entry.data.get("api_prefix")
+        verify_ssl = self._entry.options.get(
+            CONF_VERIFY_SSL,
+            DEFAULT_VERIFY_SSL,
+        )
 
         if prefix is not None:
-            zones = await self._fetch_zones_once(host, port, prefix)
+            zones = await self._fetch_zones_once(
+                host,
+                port,
+                prefix,
+                verify_ssl=verify_ssl,
+            )
 
         if not zones:
-            detected = await _autodetect_prefix(self.hass, host, port)
+            detected = await _autodetect_prefix(
+                self.hass,
+                host,
+                port,
+                verify_ssl=verify_ssl,
+            )
             if detected is not None:
-                zones = await self._fetch_zones_once(host, port, detected)
-                current = _normalize_prefix(prefix)
-                if detected != current:
-                    try:
-                        self.hass.config_entries.async_update_entry(
-                            self._entry,
-                            data={**self._entry.data, "api_prefix": detected},
-                        )
-                    except Exception:
-                        pass
+                zones = await self._fetch_zones_once(
+                    host,
+                    port,
+                    detected,
+                    verify_ssl=verify_ssl,
+                )
 
         if not zones:
             _LOGGER.debug(
@@ -656,7 +959,16 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
         is_cloud = self._entry.data.get(CONF_CONNECTION_TYPE, CONNECTION_TYPE_LOCAL) == CONNECTION_TYPE_CLOUD
         default_scan = DEFAULT_CLOUD_SCAN_INTERVAL if is_cloud else DEFAULT_SCAN_INTERVAL
+        min_scan = 15 if is_cloud else 5
         current_scan = self._entry.options.get(CONF_SCAN_INTERVAL, default_scan)
+        current_verify_ssl = self._entry.options.get(
+            CONF_VERIFY_SSL,
+            DEFAULT_VERIFY_SSL,
+        )
+        current_register_driver = self._entry.options.get(
+            CONF_REGISTER_INTEGRATION_DRIVER,
+            DEFAULT_REGISTER_INTEGRATION_DRIVER,
+        )
         current_groups = self._entry.options.get(CONF_GROUPS, []) or []
         current_cloud_profile = _infer_cloud_profile(dict(self._entry.options), dict(self._entry.data))
         current_cloud_categories = self._entry.options.get(
@@ -687,7 +999,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             scan_val = user_input.get(CONF_SCAN_INTERVAL, current_scan)
             try:
                 new_scan = int(scan_val)
-                if new_scan < 2 or new_scan > 300:
+                if new_scan < min_scan or new_scan > 300:
                     errors["scan_interval"] = "invalid_scan_interval"
             except Exception:
                 errors["scan_interval"] = "invalid_scan_interval"
@@ -698,10 +1010,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 try:
                     parsed = json.loads(raw_json)
                     if isinstance(parsed, list):
-                        groups = [group for group in parsed if isinstance(group, dict)]
+                        groups = _validate_groups(parsed, zones_map)
                     else:
                         errors["groups_json"] = "invalid_json"
-                except Exception:
+                except (TypeError, ValueError, json.JSONDecodeError):
                     errors["groups_json"] = "invalid_json"
             else:
                 seen_ids: set[str] = set()
@@ -727,12 +1039,27 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         }
                     )
 
+            selected_profile = current_cloud_profile
+            selected_device_ids = list(current_cloud_device_ids or [])
+            if is_cloud:
+                selected_profile = str(
+                    user_input.get(CONF_CLOUD_PROFILE) or current_cloud_profile
+                )
+                selected_device_ids = list(
+                    user_input.get(CONF_CLOUD_INCLUDE_DEVICE_IDS) or []
+                )
+                if (
+                    cloud_device_options
+                    and _cloud_profile_needs_device_selection(selected_profile)
+                    and not selected_device_ids
+                ):
+                    errors["base"] = "no_devices"
+
             if not errors:
                 options = dict(self._entry.options)
                 options[CONF_SCAN_INTERVAL] = new_scan
                 options[CONF_GROUPS] = groups
                 if is_cloud:
-                    selected_profile = str(user_input.get(CONF_CLOUD_PROFILE) or current_cloud_profile)
                     options[CONF_CLOUD_PROFILE] = selected_profile
                     options[CONF_CLOUD_INCLUDE_CATEGORIES] = _cloud_profile_categories(
                         selected_profile,
@@ -751,11 +1078,21 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     if cloud_device_options:
                         if _cloud_profile_needs_device_selection(selected_profile):
                             options[CONF_CLOUD_INCLUDE_DEVICE_IDS] = list(
-                                user_input.get(CONF_CLOUD_INCLUDE_DEVICE_IDS)
+                                selected_device_ids
                                 or DEFAULT_CLOUD_INCLUDE_DEVICE_IDS
                             )
                         else:
                             options[CONF_CLOUD_INCLUDE_DEVICE_IDS] = list(DEFAULT_CLOUD_INCLUDE_DEVICE_IDS)
+                else:
+                    options[CONF_VERIFY_SSL] = bool(
+                        user_input.get(CONF_VERIFY_SSL, current_verify_ssl)
+                    )
+                    options[CONF_REGISTER_INTEGRATION_DRIVER] = bool(
+                        user_input.get(
+                            CONF_REGISTER_INTEGRATION_DRIVER,
+                            current_register_driver,
+                        )
+                    )
                 return self.async_create_entry(title="", data=options)
 
         slot_names: dict[int, str] = {}
@@ -776,7 +1113,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 groups_default_json = "[]"
 
         schema_dict: dict[Any, Any] = {
-            vol.Required(CONF_SCAN_INTERVAL, default=current_scan): vol.All(int, vol.Range(min=2, max=300)),
+            vol.Required(CONF_SCAN_INTERVAL, default=current_scan): vol.All(
+                int,
+                vol.Range(min=min_scan, max=300),
+            ),
         }
 
         if is_cloud:
@@ -816,6 +1156,19 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         default=default_device_ids,
                     )
                 ] = cv.multi_select(cloud_device_options)
+        else:
+            schema_dict[
+                vol.Optional(
+                    CONF_VERIFY_SSL,
+                    default=bool(current_verify_ssl),
+                )
+            ] = cv.boolean
+            schema_dict[
+                vol.Optional(
+                    CONF_REGISTER_INTEGRATION_DRIVER,
+                    default=bool(current_register_driver),
+                )
+            ] = cv.boolean
 
         if zones_map:
             for idx in range(1, MAX_GROUP_SLOTS + 1):

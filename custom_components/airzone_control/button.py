@@ -64,7 +64,7 @@ class _SystemButton(CoordinatorEntity[AirzoneCoordinator], ButtonEntity):
 
     @property
     def available(self) -> bool:
-        return any(
+        return super().available and any(
             1
             for (sid, _z) in (self.coordinator.data or {}).keys()
             if sid == self._sid

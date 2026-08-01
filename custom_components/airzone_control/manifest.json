@@ -3,7 +3,7 @@
   "name": "Airzone Control",
   "documentation": "https://github.com/tecnoyfoto/airzone_control",
   "issue_tracker": "https://github.com/tecnoyfoto/airzone_control/issues",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "requirements": [],
   "codeowners": [
     "@tecnoyfoto"
@@ -17,11 +17,11 @@
   "zeroconf": [
     {
       "type": "_http._tcp.local.",
-      "name": "^AZ.*"
+      "name": "AZ*"
     },
     {
       "type": "_http._tcp.local.",
-      "name": "^Aidoo.*"
+      "name": "Aidoo*"
     }
   ],
   "integration_type": "hub"

@@ -6,8 +6,9 @@ import logging
 from typing import Any
 
 import aiohttp
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
@@ -25,7 +26,7 @@ from .const import (
     DEFAULT_CLOUD_INCLUDE_DEVICE_IDS,
     DEFAULT_CLOUD_SCAN_INTERVAL,
 )
-from .coordinator import AirzoneCoordinator
+from .coordinator import AirzoneCoordinator, AirzoneData
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,7 +70,6 @@ async def async_cloud_login(
         json={"email": email.strip(), "password": password},
         timeout=timeout,
     ) as response:
-        text = await response.text()
         payload: dict[str, Any] = {}
         try:
             parsed = await response.json(content_type=None)
@@ -82,11 +82,13 @@ async def async_cloud_login(
             return payload
 
         error_id = payload.get("_id") if isinstance(payload, dict) else None
-        message = payload.get("msg") if isinstance(payload, dict) else text
+        message = payload.get("msg") if isinstance(payload, dict) else None
         if response.status in (400, 401, 403, 422):
             raise CloudApiError(str(error_id or "auth_error"), str(message or "Authentication failed"))
 
-        raise aiohttp.ClientError(f"Airzone Cloud login failed: HTTP {response.status}: {text}")
+        raise aiohttp.ClientError(
+            f"Airzone Cloud login failed with HTTP {response.status}"
+        )
 
 
 class AirzoneCloudCoordinator(AirzoneCoordinator):
@@ -96,6 +98,7 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
         self,
         hass: HomeAssistant,
         *,
+        config_entry: ConfigEntry,
         email: str,
         password: str,
         scan_interval: int = DEFAULT_CLOUD_SCAN_INTERVAL,
@@ -108,6 +111,7 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
     ) -> None:
         super().__init__(
             hass,
+            config_entry=config_entry,
             host="cloud",
             port=443,
             scan_interval=scan_interval,
@@ -119,6 +123,7 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
         self._base_url = DEFAULT_CLOUD_BASE_URL.rstrip("/")
         self._token: str | None = None
         self._refresh_token: str | None = None
+        self._auth_lock = asyncio.Lock()
         self._session = async_get_clientsession(hass)
         self._include_categories = self._normalize_include_categories(include_categories)
         self._include_bound_iaqs = bool(include_bound_iaqs)
@@ -126,6 +131,8 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
         self._require_device_selection = bool(require_device_selection)
         self._exclude_iaq_names = self._normalize_exclude_iaq_names(exclude_iaq_names)
         self.cloud_energy_meters: dict[str, dict[str, Any]] = {}
+        self.cloud_stale_energy_meters: set[str] = set()
+        self.cloud_stale_iaqs: set[tuple[int, int]] = set()
 
         self.connection_type = CONNECTION_TYPE_CLOUD
         self.uid_scope = f"cloud_{self._stable_scope_id(user_id or self._email)}"
@@ -194,13 +201,19 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
 
     @staticmethod
     def _stable_scope_id(value: str) -> str:
-        digest = hashlib.sha1(value.encode("utf-8")).hexdigest()
+        digest = hashlib.sha1(
+            value.encode("utf-8"),
+            usedforsecurity=False,
+        ).hexdigest()
         return digest[:12]
 
     @staticmethod
     def _stable_int(*parts: str) -> int:
         raw = "::".join(str(part) for part in parts if part not in (None, ""))
-        digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()
+        digest = hashlib.sha1(
+            raw.encode("utf-8"),
+            usedforsecurity=False,
+        ).hexdigest()
         value = int(digest[:8], 16) & 0x7FFFFFFF
         return value or 1
 
@@ -225,6 +238,14 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
             return int(num)
         except Exception:
             return None
+
+    @staticmethod
+    def _first_present(data: dict[str, Any], *keys: str) -> Any:
+        """Return the first present value without discarding zero or False."""
+        for key in keys:
+            if key in data and data[key] is not None:
+                return data[key]
+        return None
 
     @staticmethod
     def _bool_to_int(value: Any) -> int | None:
@@ -375,7 +396,17 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
 
     async def _login(self) -> None:
         session = await self._ensure_session()
-        payload = await async_cloud_login(session, self._email, self._password, base_url=self._base_url)
+        try:
+            payload = await async_cloud_login(
+                session,
+                self._email,
+                self._password,
+                base_url=self._base_url,
+            )
+        except CloudApiError as err:
+            raise ConfigEntryAuthFailed(
+                f"Airzone Cloud authentication failed: {err.error_id}"
+            ) from err
         self._token = payload.get("token")
         self._refresh_token = payload.get("refreshToken")
         self._user_id = self._user_id or payload.get("_id")
@@ -390,7 +421,6 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
         session = await self._ensure_session()
         url = f"{self._base_url}/auth/refreshToken/{self._refresh_token}"
         async with session.get(url, timeout=15) as response:
-            text = await response.text()
             payload: dict[str, Any] = {}
             try:
                 parsed = await response.json(content_type=None)
@@ -400,7 +430,9 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
                 payload = {}
 
             if response.status != 200:
-                _LOGGER.debug("Cloud token refresh failed: HTTP %s %s", response.status, text)
+                _LOGGER.debug(
+                    "Cloud token refresh failed with HTTP %s", response.status
+                )
                 await self._login()
                 return
 
@@ -426,7 +458,8 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
         await self._ensure_authenticated()
         session = await self._ensure_session()
         url = f"{self._base_url}{path}"
-        headers = {"Authorization": f"Bearer {self._token}"}
+        token_used = self._token
+        headers = {"Authorization": f"Bearer {token_used}"}
 
         async with session.request(
             method,
@@ -436,7 +469,6 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
             headers=headers,
             timeout=20,
         ) as response:
-            text = await response.text()
             payload: dict[str, Any] | list[Any] | None = None
             try:
                 payload = await response.json(content_type=None)
@@ -444,7 +476,9 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
                 payload = None
 
             if response.status == 401 and retry_auth:
-                await self._refresh_access_token()
+                async with self._auth_lock:
+                    if self._token == token_used:
+                        await self._refresh_access_token()
                 return await self._cloud_request_json(
                     method,
                     path,
@@ -453,10 +487,19 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
                     retry_auth=False,
                 )
 
+            if response.status == 401:
+                self._token = None
+                raise ConfigEntryAuthFailed(
+                    "Airzone Cloud rejected the refreshed credentials"
+                )
+
             if response.status >= 400:
                 error_id = payload.get("_id") if isinstance(payload, dict) else None
-                message = payload.get("msg") if isinstance(payload, dict) else text
-                raise CloudApiError(str(error_id or f"http_{response.status}"), str(message or text))
+                message = payload.get("msg") if isinstance(payload, dict) else None
+                raise CloudApiError(
+                    str(error_id or f"http_{response.status}"),
+                    str(message or f"HTTP {response.status}"),
+                )
 
             return payload if payload is not None else {}
 
@@ -543,7 +586,9 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
             "minTemp": self._current_min_temp(status, mode),
             "maxTemp": self._current_max_temp(status, mode),
             "double_sp": self._bool_to_int(status.get("double_sp")) or 0,
-            "speed": self._to_int(status.get("speed_conf") or status.get("pspeed") or status.get("speed")),
+            "speed": self._to_int(
+                self._first_present(status, "speed_conf", "pspeed", "speed")
+            ),
             "speeds": max(len(speed_values) - 1, 0) if speed_values else 0,
             "speed_values": speed_values,
             "sleep": self._to_int(status.get("sleep")),
@@ -598,7 +643,9 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
             "mc_connected": self._bool_to_int(status.get("isConnected")),
             "mode": self._canonical_mode(status.get("mode")),
             "modes": self._canonical_modes(status.get("mode_available")),
-            "speed": self._to_int(status.get("speed_conf") or status.get("speed")),
+            "speed": self._to_int(
+                self._first_present(status, "speed_conf", "speed")
+            ),
             "speed_values": [int(v) for v in status.get("speed_values", []) if self._to_int(v) is not None] if isinstance(status.get("speed_values"), list) else [],
             "cloud_installation_id": entry.get("installation_id"),
             "cloud_ws_id": entry.get("ws_id"),
@@ -848,25 +895,39 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
         return summary
 
     async def _async_update_data(self) -> dict[tuple[int, int], dict[str, Any]]:
+        if self._require_device_selection and not self._include_device_ids:
+            raise UpdateFailed("This Cloud profile requires a device selection")
+
         try:
             installations = await self._get_installations()
         except CloudApiError as err:
             raise UpdateFailed(f"Cloud installations fetch failed: {err.error_id}") from err
-        except aiohttp.ClientError as err:
-            raise UpdateFailed(f"Cloud connection failed: {err}") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise UpdateFailed(
+                f"Cloud connection failed: {type(err).__name__}"
+            ) from err
 
         detail_results = await self._gather_limited(
             [self._get_installation_detail(str(item.get("installation_id"))) for item in installations if item.get("installation_id")],
             limit=4,
         )
+        for result in detail_results:
+            if isinstance(result, ConfigEntryAuthFailed):
+                raise result
 
         details_by_installation: dict[str, dict[str, Any]] = {}
         for detail in detail_results:
             if isinstance(detail, Exception):
-                _LOGGER.debug("Cloud installation detail fetch failed: %s", detail)
+                _LOGGER.debug(
+                    "Cloud installation detail fetch failed: %s",
+                    type(detail).__name__,
+                )
                 continue
             if isinstance(detail, dict) and detail.get("installation_id"):
                 details_by_installation[str(detail.get("installation_id"))] = detail
+
+        if installations and detail_results and not details_by_installation:
+            raise UpdateFailed("All Cloud installation detail requests failed")
 
         ws_tasks: list[Any] = []
         for item in installations:
@@ -876,7 +937,11 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
             for ws_id in item.get("ws_ids", []) or []:
                 ws_tasks.append(self._get_webserver_status(str(installation_id), str(ws_id)))
         ws_results = await self._gather_limited(ws_tasks, limit=4)
+        for result in ws_results:
+            if isinstance(result, ConfigEntryAuthFailed):
+                raise result
         ws_payloads = [payload for payload in ws_results if isinstance(payload, dict)]
+        self.webserver_update_success = not ws_tasks or bool(ws_payloads)
 
         inventory_by_device: dict[str, dict[str, Any]] = {}
         for item in installations:
@@ -900,9 +965,17 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
                         "ws_id": device.get("ws_id"),
                         "system_number": meta.get("system_number"),
                         "zone_number": meta.get("zone_number"),
-                        "iaqsensor_id": meta.get("iaqsensor_id") or meta.get("iaqsensorID"),
+                        "iaqsensor_id": self._first_present(
+                            meta,
+                            "iaqsensor_id",
+                            "iaqsensorID",
+                        ),
                         "iaq_number": meta.get("iaq_number"),
-                        "airqsensor_id": meta.get("airqsensor_id") or meta.get("airqsensorID"),
+                        "airqsensor_id": self._first_present(
+                            meta,
+                            "airqsensor_id",
+                            "airqsensorID",
+                        ),
                     }
 
         device_entries = [
@@ -911,6 +984,10 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
             if entry.get("device_type") in SUPPORTED_STATUS_DEVICE_TYPES
             and self._entry_enabled(entry)
         ]
+        if self._require_device_selection and (
+            self._include_device_ids - set(inventory_by_device)
+        ):
+            raise UpdateFailed("Some selected Cloud devices were not found")
         device_status_results = await self._gather_limited(
             [
                 self._get_device_status(str(entry.get("installation_id")), str(entry.get("device_id")))
@@ -918,6 +995,19 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
             ],
             limit=6,
         )
+        for result in device_status_results:
+            if isinstance(result, ConfigEntryAuthFailed):
+                raise result
+        if device_entries and not any(
+            isinstance(result, dict) for result in device_status_results
+        ):
+            raise UpdateFailed("All selected Cloud device status requests failed")
+        if (
+            self._require_device_selection
+            and self._include_device_ids
+            and not device_entries
+        ):
+            raise UpdateFailed("No selected Cloud devices were found")
 
         systems: dict[int, dict[str, Any]] = {}
         zones: list[dict[str, Any]] = []
@@ -925,28 +1015,36 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
         iaqs: dict[tuple[int, int], dict[str, Any]] = {}
         previous_energy_meters = dict(self.cloud_energy_meters or {})
         previous_iaqs = dict(self.iaqs or {})
+        stale_energy_meters: set[str] = set()
+        stale_iaqs: set[tuple[int, int]] = set()
 
         for entry, status in zip(device_entries, device_status_results, strict=False):
             if isinstance(status, Exception):
-                _LOGGER.debug("Cloud device status fetch failed for %s: %s", entry.get("device_id"), status)
+                _LOGGER.debug(
+                    "Cloud device status fetch failed: %s", type(status).__name__
+                )
                 device_id = str(entry.get("device_id") or "")
                 device_type = entry.get("device_type")
                 if device_type in ENERGY_DEVICE_TYPES and device_id in previous_energy_meters:
                     energy_meters[device_id] = previous_energy_meters[device_id]
+                    stale_energy_meters.add(device_id)
                 elif device_type in IAQ_DEVICE_TYPES:
                     previous_key, previous_iaq = self._previous_cloud_iaq(previous_iaqs, entry)
                     if previous_key is not None and previous_iaq is not None:
                         iaqs[previous_key] = previous_iaq
+                        stale_iaqs.add(previous_key)
                 continue
             if not isinstance(status, dict):
                 device_id = str(entry.get("device_id") or "")
                 device_type = entry.get("device_type")
                 if device_type in ENERGY_DEVICE_TYPES and device_id in previous_energy_meters:
                     energy_meters[device_id] = previous_energy_meters[device_id]
+                    stale_energy_meters.add(device_id)
                 elif device_type in IAQ_DEVICE_TYPES:
                     previous_key, previous_iaq = self._previous_cloud_iaq(previous_iaqs, entry)
                     if previous_key is not None and previous_iaq is not None:
                         iaqs[previous_key] = previous_iaq
+                        stale_iaqs.add(previous_key)
                 continue
 
             device_type = entry.get("device_type")
@@ -977,8 +1075,7 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
                         iaqs[(sid, iid)] = {**(previous_iaq or {}), **iaq}
                 else:
                     _LOGGER.debug(
-                        "Skipping cloud IAQ %s in complementary mode because it is bound to system/zone metadata",
-                        entry.get("device_id"),
+                        "Skipping a bound Cloud IAQ device in complementary mode"
                     )
                 continue
 
@@ -987,18 +1084,17 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
         if self._cloud_category_enabled(CLOUD_CATEGORY_CLIMATE_ZONES):
             mapped = self._map_zones(zones)
             if mapped:
-                self.data = mapped
                 self._hvac_empty_reads = 0
             else:
                 self._hvac_empty_reads += 1
-                if self.data:
-                    mapped = self.data
-                    _LOGGER.warning("Cloud update came back empty; keeping last valid state")
-                else:
+                expected_zones = any(
+                    entry.get("device_type") in ZONE_DEVICE_TYPES
+                    for entry in device_entries
+                )
+                if expected_zones:
                     raise UpdateFailed("Cloud update returned no valid zones")
         else:
             mapped = {}
-            self.data = mapped
             self._hvac_empty_reads = 0
 
         derived_systems = self._derive_systems_from_zones(zones)
@@ -1016,8 +1112,11 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
 
         self.systems = systems
         self.cloud_energy_meters = energy_meters
+        self.cloud_stale_energy_meters = stale_energy_meters
         self.webserver = self._build_webserver_summary(installations, ws_payloads)
         self.iaqs = iaqs
+        self.cloud_stale_iaqs = stale_iaqs
+        self.iaq_update_success = True
         self.transport_hvac = "cloud"
         self.transport_iaq = "cloud"
         self.transport_scheme = "cloud"
@@ -1031,12 +1130,25 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
         system_ids = sorted({sid for (sid, _zid) in mapped.keys()} | {sid for (sid, _iid) in iaqs.keys()})
         self.system_profiles = {}
         for sid in system_ids:
-            prof = self._determine_system_profile(sid)
+            prof = self._determine_system_profile(sid, mapped)
             prof["zone_count"] = len([1 for (sys_id, _zid) in mapped.keys() if sys_id == sid])
             prof["iaq_count"] = len([1 for (sys_id, _iid) in iaqs.keys() if sys_id == sid])
             self.system_profiles[sid] = prof
 
-        return mapped
+        return AirzoneData(
+            mapped,
+            (
+                self.systems,
+                self.webserver,
+                self.iaqs,
+                self.cloud_energy_meters,
+                self.system_profiles,
+                frozenset(self.cloud_stale_energy_meters),
+                frozenset(self.cloud_stale_iaqs),
+                self.version,
+                self.webserver_update_success,
+            ),
+        )
 
     async def async_set_zone_params(self, system_id: int, zone_id: int, *, request_refresh: bool = True, **kwargs) -> dict | None:
         raise HomeAssistantError("Cloud API write support is not enabled yet in this phase.")

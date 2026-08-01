@@ -1,16 +1,18 @@
 """Switches por sistema:
-- Encendido/Apagado (actúa sobre la zona máster)
+- Encendido/Apagado (actúa sobre todas las zonas)
 - ECO (si existe en sistema/zona)
 - Modo Hotel (Seguir global)
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_ON
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
@@ -135,7 +137,7 @@ class _SystemBase(CoordinatorEntity[AirzoneCoordinator], SwitchEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success
+        return super().available
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -148,7 +150,7 @@ class _SystemBase(CoordinatorEntity[AirzoneCoordinator], SwitchEntity):
 
 
 class SystemOnOffSwitch(_SystemBase):
-    """Encender/Apagar actuando sobre 'on' de la zona máster."""
+    """Turn all zones in a system on or off."""
     _attr_icon = "mdi:power"
 
     def __init__(self, coordinator: AirzoneCoordinator, system_id: int) -> None:
@@ -158,26 +160,30 @@ class SystemOnOffSwitch(_SystemBase):
 
     @property
     def is_on(self) -> bool:
-        zid = self.coordinator.master_zone_id(self._sid)
-        if zid is None:
-            return False
-        z = self.coordinator.get_zone(self._sid, zid) or {}
-        try:
-            return bool(int(z.get("on", 0)))
-        except Exception:
-            return False
+        return any(
+            _as_bool(zone.get("on")) is True
+            for zone in self.coordinator.zones_of_system(self._sid)
+        )
 
     async def async_turn_on(self, **kwargs) -> None:
-        zid = self.coordinator.master_zone_id(self._sid)
-        if zid is None:
-            return
-        await self.coordinator.async_set_zone_params(self._sid, zid, on=1)
+        for zone in self.coordinator.zones_of_system(self._sid):
+            await self.coordinator.async_set_zone_params(
+                self._sid,
+                int(zone["zoneID"]),
+                request_refresh=False,
+                on=1,
+            )
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs) -> None:
-        zid = self.coordinator.master_zone_id(self._sid)
-        if zid is None:
-            return
-        await self.coordinator.async_set_zone_params(self._sid, zid, on=0)
+        for zone in self.coordinator.zones_of_system(self._sid):
+            await self.coordinator.async_set_zone_params(
+                self._sid,
+                int(zone["zoneID"]),
+                request_refresh=False,
+                on=0,
+            )
+        await self.coordinator.async_request_refresh()
 
 
 class SystemEcoModeSwitch(_SystemBase):
@@ -296,7 +302,7 @@ class SystemACSPowerfulSwitch(_SystemBase):
         await self.coordinator.async_set_zone_params(self._sid, zone_id, **{field: 0})
 
 
-class SystemFollowMasterSwitch(_SystemBase):
+class SystemFollowMasterSwitch(_SystemBase, RestoreEntity):
     """Modo hotel: todas las zonas siguen on/mode de la zona máster."""
     _attr_icon = "mdi:vector-link"
 
@@ -308,6 +314,12 @@ class SystemFollowMasterSwitch(_SystemBase):
     @property
     def is_on(self) -> bool:
         return self.coordinator.is_follow_master_enabled(self._sid)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state == STATE_ON:
+            await self.coordinator.async_set_follow_master(self._sid, True)
 
     async def async_turn_on(self, **kwargs) -> None:
         await self.coordinator.async_set_follow_master(self._sid, True)

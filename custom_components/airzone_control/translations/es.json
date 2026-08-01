@@ -14,16 +14,45 @@
     },
     "select": {
       "mode": {
-        "name": "Modo"
+        "name": "Modo",
+        "state": {
+          "off": "Apagado",
+          "cool": "Frío",
+          "heat": "Calor",
+          "fan_only": "Ventilación",
+          "dry": "Deshumidificación",
+          "auto": "Automático"
+        }
       },
       "mode_global": {
-        "name": "Modo (global)"
+        "name": "Modo (global)",
+        "state": {
+          "off": "Apagado",
+          "cool": "Frío",
+          "heat": "Calor",
+          "fan_only": "Ventilación",
+          "dry": "Deshumidificación",
+          "auto": "Automático"
+        }
       },
       "speed": {
-        "name": "Velocidad"
+        "name": "Velocidad",
+        "state": {
+          "auto": "Automática",
+          "speed_1": "Velocidad 1",
+          "speed_2": "Velocidad 2",
+          "speed_3": "Velocidad 3",
+          "speed_4": "Velocidad 4",
+          "speed_5": "Velocidad 5"
+        }
       },
       "ventilation": {
-        "name": "Ventilación"
+        "name": "Ventilación",
+        "state": {
+          "off": "Apagada",
+          "manual": "Manual",
+          "auto": "Automática"
+        }
       },
       "sleep": {
         "name": "Reposo"
@@ -291,7 +320,8 @@
         "description": "Conecta con tu Airzone Local API (webserver).",
         "data": {
           "host": "Host",
-          "port": "Puerto"
+          "port": "Puerto",
+          "verify_ssl": "Verificar certificado TLS"
         }
       },
       "cloud": {
@@ -320,6 +350,19 @@
         "data": {
           "api_prefix": "Prefijo API"
         }
+      },
+      "reauth_confirm": {
+        "title": "Renovar credenciales de Airzone Cloud",
+        "description": "Introduce credenciales válidas para volver a conectar esta entrada.",
+        "data": {
+          "email": "Email",
+          "password": "Contraseña"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Airzone detectado",
+        "description": "¿Quieres configurar el controlador {name}?",
+        "data": {}
       }
     },
     "error": {
@@ -328,10 +371,12 @@
       "no_email": "Introduce un email.",
       "no_password": "Introduce una contraseña.",
       "invalid_auth": "Credenciales de Airzone Cloud no válidas.",
-      "user_not_confirmed": "Tu cuenta de Airzone Cloud todavía no está confirmada."
+      "user_not_confirmed": "Tu cuenta de Airzone Cloud todavía no está confirmada.",
+      "no_devices": "Selecciona al menos un dispositivo Cloud para este perfil."
     },
     "abort": {
-      "already_configured": "Esta fuente de Airzone ya está configurada."
+      "already_configured": "Esta fuente de Airzone ya está configurada.",
+      "reauth_successful": "Las credenciales se han actualizado correctamente."
     }
   },
   "options": {
@@ -361,14 +406,17 @@
           "cloud_include_categories": "Categorías cloud a incluir",
           "cloud_include_device_ids": "Dispositivos cloud a incluir",
           "cloud_include_bound_iaqs": "Incluir sondas IAQ vinculadas a sistemas o zonas",
-          "cloud_exclude_iaq_names": "Nombres de sondas IAQ a excluir"
+          "cloud_exclude_iaq_names": "Nombres de sondas IAQ a excluir",
+          "verify_ssl": "Verificar certificado TLS",
+          "register_integration_driver": "Registrar Home Assistant como driver en Airzone"
         },
         "description": "Crea hasta 8 grupos lógicos con un nombre y seleccionando sus zonas. Para instalaciones grandes, usa el campo JSON avanzado (tiene prioridad sobre los grupos de la UI)."
       }
     },
     "error": {
-      "invalid_scan_interval": "Intervalo de sondeo no válido. Usa un valor entre 2 y 300 segundos.",
-      "invalid_json": "JSON no válido. Debe ser una lista de objetos de grupo."
+      "invalid_scan_interval": "Intervalo de sondeo no válido. Usa entre 5 y 300 segundos en local o entre 15 y 300 en Cloud.",
+      "invalid_json": "JSON no válido. Cada grupo necesita nombre, identificador único y zonas con formato sistema/zona.",
+      "no_devices": "Selecciona al menos un dispositivo Cloud para este perfil."
     }
   },
   "state": {

@@ -2,6 +2,45 @@
 
 # Historial de Cambios
 
+## 1.9.0 - 2026-08-01
+
+### Añadido
+
+- Descubrimiento automático de controladores Local API mediante Zeroconf, manteniendo disponible la configuración manual por IP.
+- Flujo de reautenticación para renovar las credenciales de entradas Cloud API.
+- Opción de verificación TLS para conexiones Local API; permanece activada por defecto.
+- Opción independiente para registrar el driver de integración en equipos compatibles; permanece desactivada por defecto.
+- Información adicional de transporte y estado de las distintas fuentes en los diagnósticos de soporte.
+
+### Cambiado
+
+- Las conexiones HTTP reutilizan la sesión administrada por Home Assistant y se integran con el ciclo de vida actual de las entradas de configuración.
+- La disponibilidad de las entidades refleja el estado de su fuente concreta: climatización, IAQ, webserver o dispositivo Cloud.
+- El descubrimiento de instalaciones Cloud admite resultados paginados.
+- Los perfiles Cloud `complement_local` y `custom` requieren seleccionar al menos un dispositivo antes de guardar.
+- El intervalo mínimo configurable es de `5` segundos para Local API y `15` segundos para Cloud API; el valor Cloud por defecto continúa siendo `30` segundos.
+- Las entidades opcionales solo se crean cuando el equipo publica el campo correspondiente.
+- Los estados de modo, velocidad y calidad de aire utilizan identificadores estables y traducciones de Home Assistant.
+- El idioma de respaldo para traducciones no disponibles pasa a ser inglés.
+- Se han ajustado las clases de estado de los contadores energéticos Cloud según el significado de cada campo.
+- El interruptor de sistema enciende o apaga todas sus zonas y el modo «seguir zona maestra» recupera su último estado tras reiniciar.
+
+### Corregido
+
+- Cálculo del estado de actividad de los termostatos de zona, sistema y grupo usando la demanda real publicada por el equipo.
+- Manejo de valores numéricos válidos iguales a cero en sensores y datos Cloud.
+- Conservación del último estado válido sin presentar como disponibles las fuentes cuya actualización haya fallado.
+- Validación de grupos lógicos, referencias de zona e identificadores duplicados antes de guardar opciones.
+- Evitadas tareas duplicadas al sincronizar zonas con la zona maestra.
+- Mejorada la selección del método de transporte y el refresco periódico de metadatos del equipo.
+- Corregidos los patrones de descubrimiento Zeroconf del manifiesto.
+
+### Notas
+
+- Cloud API continúa siendo de solo lectura.
+- Los archivos generados para soporte omiten datos de configuración e identificadores que no son necesarios para analizar el funcionamiento de la integración.
+- Se ha simplificado el registro de respuestas HTTP para conservar únicamente la información necesaria para diagnosticar errores.
+
 ## 1.8.0 - 2026-05-05
 
 ### Añadido

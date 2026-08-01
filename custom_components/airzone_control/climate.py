@@ -26,6 +26,69 @@ from .api_modes import (
 
 _LOGGER = logging.getLogger(__name__)
 
+_HVAC_MODE_ORDER = (
+    HVACMode.OFF,
+    HVACMode.HEAT,
+    HVACMode.COOL,
+    HVACMode.AUTO,
+    HVACMode.DRY,
+    HVACMode.FAN_ONLY,
+)
+
+
+def _first_present(data: dict, *keys: str) -> Any:
+    """Return the first present, non-None value without discarding zero."""
+    for key in keys:
+        if key in data and data[key] is not None:
+            return data[key]
+    return None
+
+
+def _demand_active(zones: list[dict], *keys: str) -> bool | None:
+    """Return aggregate demand, or None when no demand field is reported."""
+    found = False
+    for zone in zones:
+        for key in keys:
+            if key not in zone or zone[key] is None:
+                continue
+            found = True
+            try:
+                if float(zone[key]) > 0:
+                    return True
+            except (TypeError, ValueError):
+                if bool(zone[key]):
+                    return True
+    return False if found else None
+
+
+def _zone_is_on(zone: dict) -> bool:
+    try:
+        return int(zone.get("on", 1)) != 0
+    except (TypeError, ValueError):
+        return bool(zone.get("on", True))
+
+
+def _hvac_action(zones: list[dict], mode: HVACMode) -> HVACAction:
+    """Derive activity from demand fields instead of equating mode with activity."""
+    if not zones or not any(_zone_is_on(zone) for zone in zones):
+        return HVACAction.OFF
+
+    if mode == HVACMode.HEAT:
+        demand = _demand_active(zones, "heat_demand", "floor_demand", "air_demand")
+        return HVACAction.HEATING if demand else HVACAction.IDLE
+    if mode == HVACMode.COOL:
+        demand = _demand_active(zones, "cold_demand", "air_demand")
+        return HVACAction.COOLING if demand else HVACAction.IDLE
+    if mode == HVACMode.FAN_ONLY:
+        demand = _demand_active(zones, "air_demand")
+        return HVACAction.FAN if demand is not False else HVACAction.IDLE
+    if mode == HVACMode.DRY:
+        demand = _demand_active(zones, "air_demand")
+        return HVACAction.DRYING if demand is not False else HVACAction.IDLE
+    if mode == HVACMode.OFF:
+        return HVACAction.OFF
+    return HVACAction.IDLE
+
 
 def _slugify(value: str) -> str:
     """Convierte un nombre libre en un identificador simple."""
@@ -150,31 +213,34 @@ class AirzoneZoneClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
 
     @staticmethod
     def _zone_target_temperature(z: dict) -> Optional[float]:
-        return z.get("setpoint") or z.get("heatsetpoint") or z.get("coolsetpoint")
+        return _first_present(z, "setpoint", "heatsetpoint", "coolsetpoint")
 
     @staticmethod
     def _zone_current_temperature(z: dict) -> Optional[float]:
-        return (
-            z.get("roomTemp")
-            or z.get("room_temperature")
-            or z.get("temp_return")
-            or z.get("temp")
-            or z.get("temperature")
+        return _first_present(
+            z,
+            "roomTemp",
+            "room_temperature",
+            "temp_return",
+            "temp",
+            "temperature",
         )
 
     @staticmethod
     def _zone_min_temp(z: dict) -> float:
-        return float(z.get("minTemp") or z.get("mintemp") or 15)
+        value = _first_present(z, "minTemp", "mintemp")
+        return float(15 if value is None else value)
 
     @staticmethod
     def _zone_max_temp(z: dict) -> float:
-        return float(z.get("maxTemp") or z.get("maxtemp") or 30)
+        value = _first_present(z, "maxTemp", "maxtemp")
+        return float(30 if value is None else value)
 
     # ---------- Properties ----------
 
     @property
     def available(self) -> bool:
-        return self._zone() is not None
+        return super().available and self._zone() is not None
 
     @property
     def current_temperature(self) -> float | None:
@@ -239,18 +305,7 @@ class AirzoneZoneClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
         except Exception:
             pass
 
-        mode = self.hvac_mode
-        if mode == HVACMode.HEAT:
-            return HVACAction.HEATING
-        if mode == HVACMode.COOL:
-            return HVACAction.COOLING
-        if mode == HVACMode.FAN_ONLY:
-            return HVACAction.FAN
-        if mode == HVACMode.DRY:
-            return HVACAction.DRYING
-        if mode == HVACMode.OFF:
-            return HVACAction.OFF
-        return HVACAction.IDLE
+        return _hvac_action([z], self.hvac_mode)
 
     # ---------- Actions ----------
 
@@ -349,36 +404,39 @@ class AirzoneMasterClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity)
 
     @staticmethod
     def _zone_target_temperature(z: dict) -> Optional[float]:
-        return z.get("setpoint") or z.get("heatsetpoint") or z.get("coolsetpoint")
+        return _first_present(z, "setpoint", "heatsetpoint", "coolsetpoint")
 
     @staticmethod
     def _zone_current_temperature(z: dict) -> Optional[float]:
-        return (
-            z.get("roomTemp")
-            or z.get("room_temperature")
-            or z.get("temp_return")
-            or z.get("temp")
-            or z.get("temperature")
+        return _first_present(
+            z,
+            "roomTemp",
+            "room_temperature",
+            "temp_return",
+            "temp",
+            "temperature",
         )
 
     @staticmethod
     def _zone_min_temp(z: dict) -> float:
-        return float(z.get("minTemp") or z.get("mintemp") or 15)
+        value = _first_present(z, "minTemp", "mintemp")
+        return float(15 if value is None else value)
 
     @staticmethod
     def _zone_max_temp(z: dict) -> float:
-        return float(z.get("maxTemp") or z.get("maxtemp") or 30)
+        value = _first_present(z, "maxTemp", "maxtemp")
+        return float(30 if value is None else value)
 
     @property
     def available(self) -> bool:
-        return bool(self._zones())
+        return super().available and bool(self._zones())
 
     @property
     def current_temperature(self) -> float | None:
         zones = self._zones()
         temps = []
         for z in zones:
-            t = z.get("temp") or z.get("temperature")
+            t = _first_present(z, "temp", "temperature")
             if t is not None:
                 temps.append(float(t))
         if not temps:
@@ -408,14 +466,14 @@ class AirzoneMasterClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity)
         zones = self._zones()
         if not zones:
             return 15
-        return min(self._zone_min_temp(z) for z in zones)
+        return max(self._zone_min_temp(z) for z in zones)
 
     @property
     def max_temp(self) -> float:
         zones = self._zones()
         if not zones:
             return 30
-        return max(self._zone_max_temp(z) for z in zones)
+        return min(self._zone_max_temp(z) for z in zones)
 
     @property
     def hvac_modes(self) -> list[HVACMode]:
@@ -432,7 +490,7 @@ class AirzoneMasterClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity)
         common = set.intersection(*mode_sets) if mode_sets else {HVACMode.OFF}
         if HVACMode.OFF not in common:
             common.add(HVACMode.OFF)
-        resolved = list(common)
+        resolved = [mode for mode in _HVAC_MODE_ORDER if mode in common]
         if getattr(self.coordinator, "read_only", False):
             current: HVACMode | None = None
             for z in zones:
@@ -487,18 +545,7 @@ class AirzoneMasterClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity)
         if all_off:
             return HVACAction.OFF
 
-        mode = self.hvac_mode
-        if mode == HVACMode.HEAT:
-            return HVACAction.HEATING
-        if mode == HVACMode.COOL:
-            return HVACAction.COOLING
-        if mode == HVACMode.FAN_ONLY:
-            return HVACAction.FAN
-        if mode == HVACMode.DRY:
-            return HVACAction.DRYING
-        if mode == HVACMode.OFF:
-            return HVACAction.OFF
-        return HVACAction.IDLE
+        return _hvac_action(zones, self.hvac_mode)
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         temp = kwargs.get(ATTR_TEMPERATURE)
@@ -516,8 +563,6 @@ class AirzoneMasterClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity)
         await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        # El termostato maestro NO cambia el modo (eso lo hace el modo global o el selector por zona).
-        # Aquí solo hacemos ON/OFF masivo.
         if hvac_mode == HVACMode.OFF:
             for zid in self._zone_ids:
                 await self.coordinator.async_set_zone_params(
@@ -529,12 +574,17 @@ class AirzoneMasterClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity)
             await self.coordinator.async_request_refresh()
             return
 
+        code = HVAC_TO_API_MODE.get(hvac_mode)
+        body: Dict[str, Any] = {"on": 1}
+        if code is not None:
+            body["mode"] = code
+
         for zid in self._zone_ids:
             await self.coordinator.async_set_zone_params(
                 self._system_id,
                 zid,
                 request_refresh=False,
-                on=1,
+                **body,
             )
         await self.coordinator.async_request_refresh()
 
@@ -607,25 +657,28 @@ class AirzoneGroupClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
 
     @staticmethod
     def _zone_target_temperature(z: dict) -> Optional[float]:
-        return z.get("setpoint") or z.get("heatsetpoint") or z.get("coolsetpoint")
+        return _first_present(z, "setpoint", "heatsetpoint", "coolsetpoint")
 
     @staticmethod
     def _zone_current_temperature(z: dict) -> Optional[float]:
-        return (
-            z.get("roomTemp")
-            or z.get("room_temperature")
-            or z.get("temp_return")
-            or z.get("temp")
-            or z.get("temperature")
+        return _first_present(
+            z,
+            "roomTemp",
+            "room_temperature",
+            "temp_return",
+            "temp",
+            "temperature",
         )
 
     @staticmethod
     def _zone_min_temp(z: dict) -> float:
-        return float(z.get("minTemp") or z.get("mintemp") or 15)
+        value = _first_present(z, "minTemp", "mintemp")
+        return float(15 if value is None else value)
 
     @staticmethod
     def _zone_max_temp(z: dict) -> float:
-        return float(z.get("maxTemp") or z.get("maxtemp") or 30)
+        value = _first_present(z, "maxTemp", "maxtemp")
+        return float(30 if value is None else value)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -640,7 +693,7 @@ class AirzoneGroupClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
 
     @property
     def available(self) -> bool:
-        return bool(self._zones())
+        return super().available and bool(self._zones())
 
     @property
     def current_temperature(self) -> float | None:
@@ -671,14 +724,14 @@ class AirzoneGroupClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
         zones = self._zones()
         if not zones:
             return 15
-        return min(self._zone_min_temp(z) for z in zones)
+        return max(self._zone_min_temp(z) for z in zones)
 
     @property
     def max_temp(self) -> float:
         zones = self._zones()
         if not zones:
             return 30
-        return max(self._zone_max_temp(z) for z in zones)
+        return min(self._zone_max_temp(z) for z in zones)
 
     @property
     def hvac_modes(self) -> list[HVACMode]:
@@ -698,7 +751,7 @@ class AirzoneGroupClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
         common = set.intersection(*mode_sets) if mode_sets else {HVACMode.OFF}
         if HVACMode.OFF not in common:
             common.add(HVACMode.OFF)
-        resolved = list(common)
+        resolved = [mode for mode in _HVAC_MODE_ORDER if mode in common]
         if getattr(self.coordinator, "read_only", False):
             current: HVACMode | None = None
             for z in zones:
@@ -752,18 +805,7 @@ class AirzoneGroupClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
         if all_off:
             return HVACAction.OFF
 
-        mode = self.hvac_mode
-        if mode == HVACMode.HEAT:
-            return HVACAction.HEATING
-        if mode == HVACMode.COOL:
-            return HVACAction.COOLING
-        if mode == HVACMode.FAN_ONLY:
-            return HVACAction.FAN
-        if mode == HVACMode.DRY:
-            return HVACAction.DRYING
-        if mode == HVACMode.OFF:
-            return HVACAction.OFF
-        return HVACAction.IDLE
+        return _hvac_action(zones, self.hvac_mode)
 
     # ---------- Actions ----------
 
