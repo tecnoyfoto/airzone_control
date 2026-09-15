@@ -13,7 +13,7 @@ The integration is designed for installations with multiple zones, IAQ sensors, 
 
 ## Current Status
 
-Version `1.9.0` improves reliability, configuration and entity availability for both Local API and Cloud API:
+Version `1.9.1` improves reliability, configuration and entity availability for both Local API and Cloud API:
 
 - Cloud entities are read-only.
 - Cloud write actions are disabled.
@@ -23,6 +23,9 @@ Version `1.9.0` improves reliability, configuration and entity availability for 
 - Integration driver registration is optional and disabled by default.
 - Each entity's availability reflects the state of the source providing its data.
 - The default Cloud polling interval is `30` seconds.
+- Cloud clamp power uses the correct watt scale. Hourly energy readings are
+  identified explicitly, and separate persistent cumulative counters are
+  provided for Home Assistant energy statistics.
 
 Recommended mixed setup:
 

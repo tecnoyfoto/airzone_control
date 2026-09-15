@@ -13,7 +13,7 @@ La integración está pensada para instalaciones con varias zonas, sensores IAQ 
 
 ## Estado Actual
 
-La versión `1.9.0` mejora la fiabilidad, la configuración y la disponibilidad de entidades tanto para Local API como para Cloud API:
+La versión `1.9.1` mejora la fiabilidad, la configuración y la disponibilidad de entidades tanto para Local API como para Cloud API:
 
 - Las entidades Cloud son de solo lectura.
 - La escritura Cloud está desactivada.
@@ -23,6 +23,10 @@ La versión `1.9.0` mejora la fiabilidad, la configuración y la disponibilidad 
 - El registro del driver de integración es opcional y está desactivado por defecto.
 - La disponibilidad de cada entidad refleja el estado de la fuente que proporciona sus datos.
 - El intervalo de sondeo Cloud por defecto es de `30` segundos.
+- La potencia de la pinza Cloud usa la escala correcta en vatios. Las lecturas
+  horarias de energía se identifican expresamente y se proporcionan contadores
+  acumulativos persistentes separados para las estadísticas de energía de
+  Home Assistant.
 
 Configuración mixta recomendada:
 
