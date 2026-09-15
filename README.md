@@ -205,7 +205,9 @@ Cloud API can expose:
 
 - Read-only climate zones when enabled.
 - Cloud IAQ sensors.
-- Cloud energy meter sensors.
+- Cloud energy meter sensors. Interval readings are exposed as last-hour
+  values, while separate persistent total sensors accumulate each dated period
+  once and are suitable for Home Assistant energy statistics.
 - Cloud ACS/auxiliary data where supported by the integration.
 
 ## Diagnostics
@@ -219,7 +221,9 @@ Internal identifiers may still be used inside Home Assistant to keep entities an
 - Cloud API support is read-only in this release.
 - Cloud write support is intentionally disabled until it is validated safely.
 - Cloud polling should stay conservative. The public default is `30` seconds.
-- The meaning and period of some energy counters may vary by Airzone model or firmware.
+- The integration follows the period timestamp supplied by Airzone when
+  accumulating clamp energy. An interval can be missed if Home Assistant and
+  the Cloud connection remain unavailable for the whole period.
 - Not every Airzone device exposes the same Local API fields; entities are created dynamically when fields exist.
 
 ## Troubleshooting

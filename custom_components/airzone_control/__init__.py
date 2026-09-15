@@ -107,6 +107,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ),
         )
         coordinator.cloud_profile = cloud_profile
+        await coordinator.async_initialize_energy_store()
     else:
         scan = entry.options.get(
             CONF_SCAN_INTERVAL,

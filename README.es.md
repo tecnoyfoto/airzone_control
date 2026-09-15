@@ -205,7 +205,10 @@ Cloud API puede exponer:
 
 - Zonas climate de solo lectura cuando se habilitan.
 - Sondas IAQ Cloud.
-- Sensores de medidor energético Cloud.
+- Sensores de medidor energético Cloud. Las lecturas por intervalo se muestran
+  como valores de la última hora y otros sensores totales persistentes acumulan
+  una sola vez cada periodo fechado, por lo que sirven para las estadísticas de
+  energía de Home Assistant.
 - Datos Cloud ACS/auxiliares cuando están soportados por la integración.
 
 ## Diagnósticos
@@ -219,7 +222,9 @@ Los identificadores internos pueden seguir utilizándose dentro de Home Assistan
 - Cloud API es solo lectura en esta versión.
 - La escritura Cloud está desactivada hasta que pueda validarse con seguridad.
 - El sondeo Cloud debe ser conservador. El valor público por defecto es `30` segundos.
-- El significado y periodo de algunos contadores energéticos puede variar según el modelo o firmware Airzone.
+- La integración utiliza la fecha del periodo enviada por Airzone al acumular la
+  energía de la pinza. Puede perderse un intervalo si Home Assistant y la
+  conexión Cloud permanecen indisponibles durante todo ese periodo.
 - No todos los equipos Airzone exponen los mismos campos de Local API; las entidades se crean dinámicamente cuando existen datos.
 
 ## Solución de Problemas

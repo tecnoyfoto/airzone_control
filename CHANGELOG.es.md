@@ -2,6 +2,21 @@
 
 # Historial de Cambios
 
+## 1.9.1 - 2026-09-15
+
+### Añadido
+
+- Sensores acumulativos persistentes de energía importada y devuelta para la
+  pinza energética Cloud, incluidos los contadores por fase.
+
+### Corregido
+
+- Los campos de energía por intervalo de Airzone se identifican ahora como
+  lecturas de la última hora y no como contadores totales, evitando estadísticas
+  negativas incorrectas.
+- Los campos de potencia de la pinza usan ahora vatios, de acuerdo con los
+  valores entregados por la API Cloud.
+
 ## 1.9.0 - 2026-08-01
 
 ### Añadido

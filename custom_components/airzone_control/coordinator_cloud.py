@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .const import (
@@ -25,8 +26,10 @@ from .const import (
     DEFAULT_CLOUD_INCLUDE_BOUND_IAQS,
     DEFAULT_CLOUD_INCLUDE_DEVICE_IDS,
     DEFAULT_CLOUD_SCAN_INTERVAL,
+    DOMAIN,
 )
 from .coordinator import AirzoneCoordinator, AirzoneData
+from .energy import update_interval_totals
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -133,6 +136,12 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
         self.cloud_energy_meters: dict[str, dict[str, Any]] = {}
         self.cloud_stale_energy_meters: set[str] = set()
         self.cloud_stale_iaqs: set[tuple[int, int]] = set()
+        self._energy_store = Store(
+            hass,
+            1,
+            f"{DOMAIN}.cloud_energy.{config_entry.entry_id}",
+        )
+        self._energy_store_data: dict[str, Any] = {"meters": {}}
 
         self.connection_type = CONNECTION_TYPE_CLOUD
         self.uid_scope = f"cloud_{self._stable_scope_id(user_id or self._email)}"
@@ -142,6 +151,23 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
         self.transport_iaq = "cloud"
         self.driver = "cloud"
         self.expose_webserver_entities = self._cloud_category_enabled(CLOUD_CATEGORY_CLIMATE_ZONES)
+
+    async def async_initialize_energy_store(self) -> None:
+        """Load persistent totals before the first Cloud refresh."""
+        stored = await self._energy_store.async_load()
+        if isinstance(stored, dict) and isinstance(stored.get("meters"), dict):
+            self._energy_store_data = stored
+
+    def _apply_persistent_energy_totals(
+        self, meter_id: str, meter: dict[str, Any]
+    ) -> None:
+        """Convert Airzone interval values into restart-safe counters."""
+        stored_meters = self._energy_store_data.setdefault("meters", {})
+        if update_interval_totals(stored_meters, meter_id, meter):
+            self._energy_store.async_delay_save(
+                lambda: self._energy_store_data,
+                1,
+            )
 
     @staticmethod
     def _normalize_include_categories(categories: list[str] | tuple[str, ...] | set[str] | None) -> set[str]:
@@ -737,6 +763,7 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
                     meter[key] = value
 
         for key in (
+            "energy_hour_latest_date",
             "energy_period_end_dt",
             "energy1_period_end_dt",
             "energy2_period_end_dt",
@@ -1062,6 +1089,7 @@ class AirzoneCloudCoordinator(AirzoneCoordinator):
                 meter = self._normalize_energy_meter_status(entry, status)
                 meter_id = str(meter.get("id") or entry.get("device_id") or "")
                 if meter_id:
+                    self._apply_persistent_energy_totals(meter_id, meter)
                     energy_meters[meter_id] = {**(previous_energy_meters.get(meter_id) or {}), **meter}
                 continue
 

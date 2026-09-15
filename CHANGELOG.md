@@ -2,6 +2,20 @@
 
 # Changelog
 
+## 1.9.1 - 2026-09-15
+
+### Added
+
+- Restart-safe cumulative imported and returned energy sensors for the Cloud
+  energy clamp, including per-phase counters.
+
+### Fixed
+
+- Airzone interval energy fields are now identified as last-hour readings
+  instead of lifetime counters, preventing invalid negative statistics.
+- Clamp power fields now use watts, matching the values returned by the Cloud
+  API.
+
 ## 1.9.0 - 2026-08-01
 
 ### Added
