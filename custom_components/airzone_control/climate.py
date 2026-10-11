@@ -186,7 +186,7 @@ class AirzoneZoneClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
         self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_climate_{self._system_id}_{self._zone_id}")
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_supported_features = (
-            0
+            ClimateEntityFeature(0)
             if getattr(coordinator, "read_only", False)
             else (
                 ClimateEntityFeature.TARGET_TEMPERATURE
@@ -375,7 +375,7 @@ class AirzoneMasterClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity)
         self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_master_{self._system_id}")
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_supported_features = (
-            0
+            ClimateEntityFeature(0)
             if getattr(coordinator, "read_only", False)
             else (
                 ClimateEntityFeature.TARGET_TEMPERATURE
@@ -635,7 +635,7 @@ class AirzoneGroupClimate(CoordinatorEntity[AirzoneCoordinator], ClimateEntity):
         self._attr_unique_id = coordinator.scoped_unique_id(f"{DOMAIN}_group_{self._group_id}")
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_supported_features = (
-            0
+            ClimateEntityFeature(0)
             if getattr(coordinator, "read_only", False)
             else (
                 ClimateEntityFeature.TARGET_TEMPERATURE
